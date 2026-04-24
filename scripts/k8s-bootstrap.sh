@@ -10,15 +10,15 @@
 # Pré-requisitos no host de execução:
 #   - kubectl instalado e configurado
 #   - helm v3 instalado
-#   - Acesso de rede ao cluster K3s (192.168.1.20)
+#   - Acesso de rede ao cluster K3s (192.168.1.30)
 #   - KUBECONFIG apontando para o cluster certo
 #
 # Nodes do cluster:
-#   k3s-server       192.168.1.20  control-plane (NoSchedule)
-#   k3s-worker-cicd  192.168.1.21  workload=cicd       (6GB RAM)
-#   ci-runner        192.168.1.22  workload=runner     (4GB RAM)
-#   notebook-i5      192.168.1.11  workload=monitoring (8GB RAM)
-#   raspberry-pi     192.168.1.12  workload=edge, arch=arm (1GB RAM)
+#   k3s-server       192.168.1.30  control-plane (NoSchedule)
+#   k3s-worker-cicd  192.168.1.31  workload=cicd       (6GB RAM)
+#   ci-runner        192.168.1.32  workload=runner     (4GB RAM)
+#   notebook-i5      192.168.1.65  workload=monitoring (8GB RAM)
+#   raspberry-pi     192.168.1.110  workload=edge, arch=arm (1GB RAM)
 # =============================================================================
 
 set -euo pipefail
@@ -152,9 +152,9 @@ step_storage() {
   log_info "=== Etapa 3: Configurando storage NFS ==="
 
   # Verificar se NFS está acessível
-  log_info "Verificando acesso ao NFS 192.168.1.5..."
+  log_info "Verificando acesso ao NFS 192.168.1.112..."
   if ! kubectl run nfs-test --rm --restart=Never --image=busybox:1.35 \
-    --command -- sh -c "nc -z 192.168.1.5 2049 && echo NFS_OK" \
+    --command -- sh -c "nc -z 192.168.1.112 2049 && echo NFS_OK" \
     --timeout=30s &>/dev/null 2>&1; then
     log_warn "Não foi possível verificar NFS. Continuando assim mesmo."
   fi

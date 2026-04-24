@@ -94,7 +94,7 @@ resource "netbox_prefix" "k3s_services" {
 
 # IP do nó control-plane do K3s
 resource "netbox_ip_address" "k3s_server" {
-  ip_address  = "192.168.1.20/24"
+  ip_address  = "192.168.1.30/24"
   status      = "active"
   description = "k3s-server (control-plane)"
 
@@ -103,7 +103,7 @@ resource "netbox_ip_address" "k3s_server" {
 
 # IP do nó worker dedicado a pipelines CI/CD
 resource "netbox_ip_address" "k3s_worker_cicd" {
-  ip_address  = "192.168.1.21/24"
+  ip_address  = "192.168.1.31/24"
   status      = "active"
   description = "k3s-worker-cicd"
 
@@ -112,7 +112,7 @@ resource "netbox_ip_address" "k3s_worker_cicd" {
 
 # IP do nó executor de pipelines CI (GitLab Runner / GitHub Actions)
 resource "netbox_ip_address" "ci_runner" {
-  ip_address  = "192.168.1.22/24"
+  ip_address  = "192.168.1.32/24"
   status      = "active"
   description = "ci-runner"
 
@@ -127,7 +127,7 @@ resource "netbox_ip_address" "ci_runner" {
 
 # Host Proxmox — notebook i7 que hospeda o hypervisor e as VMs
 resource "netbox_ip_address" "proxmox_host" {
-  ip_address  = "192.168.1.10/24"
+  ip_address  = "192.168.1.20/24"
   status      = "active"
   description = "notebook-i7 (Proxmox host)"
 
@@ -136,7 +136,7 @@ resource "netbox_ip_address" "proxmox_host" {
 
 # Notebook i5 — nó worker bare metal para workloads de monitoring
 resource "netbox_ip_address" "notebook_i5" {
-  ip_address  = "192.168.1.11/24"
+  ip_address  = "192.168.1.65/24"
   status      = "active"
   description = "notebook-i5 (k3s monitoring worker)"
 
@@ -145,7 +145,7 @@ resource "netbox_ip_address" "notebook_i5" {
 
 # Raspberry Pi — nó worker bare metal ARMv7 para workloads de edge
 resource "netbox_ip_address" "raspberry_pi" {
-  ip_address  = "192.168.1.12/24"
+  ip_address  = "192.168.1.110/24"
   status      = "active"
   description = "raspberry-pi (k3s edge worker, ARMv7)"
 
@@ -154,7 +154,7 @@ resource "netbox_ip_address" "raspberry_pi" {
 
 # NAS — servidor de armazenamento compartilhado via NFS
 resource "netbox_ip_address" "nas" {
-  ip_address  = "192.168.1.5/24"
+  ip_address  = "192.168.1.112/24"
   status      = "active"
   description = "NAS Storage"
 
@@ -163,9 +163,27 @@ resource "netbox_ip_address" "nas" {
 
 # VM do NetBox IPAM — o próprio serviço que estamos configurando
 resource "netbox_ip_address" "netbox_vm" {
-  ip_address  = "192.168.1.30/24"
+  ip_address  = "192.168.1.72/24"
   status      = "active"
   description = "NetBox IPAM VM"
+
+  depends_on = [netbox_prefix.management]
+}
+
+# BookStack — wiki / documentação interna do laboratório
+resource "netbox_ip_address" "bookstack" {
+  ip_address  = "192.168.1.76/24"
+  status      = "active"
+  description = "BookStack (wiki interna do lab)"
+
+  depends_on = [netbox_prefix.management]
+}
+
+# HomeAssistant — automação residencial
+resource "netbox_ip_address" "homeassistant" {
+  ip_address  = "192.168.1.107/24"
+  status      = "active"
+  description = "HomeAssistant (automação residencial)"
 
   depends_on = [netbox_prefix.management]
 }

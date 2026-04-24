@@ -5,7 +5,7 @@
 variable "proxmox_api_url" {
   description = "URL completa da API do Proxmox VE (incluindo /api2/json)"
   type        = string
-  default     = "https://192.168.1.10:8006/api2/json"
+  default     = "https://192.168.1.20:8006/api2/json"
 }
 
 variable "proxmox_api_token_id" {
@@ -59,13 +59,13 @@ variable "vm_bridge" {
 variable "gateway" {
   description = "Gateway padrão da rede do laboratório"
   type        = string
-  default     = "192.168.1.1"
+  default     = "192.168.1.254"
 }
 
 variable "dns_servers" {
   description = "Lista de servidores DNS para as VMs"
   type        = list(string)
-  default     = ["192.168.1.1", "8.8.8.8"]
+  default     = ["192.168.1.254", "8.8.8.8"]
 }
 
 # ---------------------------------------------------------------------------
@@ -73,7 +73,7 @@ variable "dns_servers" {
 # ---------------------------------------------------------------------------
 
 variable "netbox_url" {
-  description = "URL base da API do NetBox (ex: http://192.168.1.30:8000)"
+  description = "URL base da API do NetBox (ex: http://192.168.1.72:8000)"
   type        = string
 }
 

@@ -84,7 +84,7 @@ flowchart TD
                 VM_SERVER["k3s-server\n2vCPU / 4GB\nK3s control-plane\netcd embedded"]
                 VM_CICD["k3s-worker-cicd\n4vCPU / 6GB\nworkload=cicd"]
                 VM_RUNNER["ci-runner\n2vCPU / 4GB\nTekton runner\nDocker builds"]
-                VM_NETBOX["netbox-vm\nIPAM / DCIM\n192.168.1.30:8000"]
+                VM_NETBOX["netbox-vm\nIPAM / DCIM\n192.168.1.72:8000"]
             end
             PVE --> VM_SERVER
             PVE --> VM_CICD
@@ -118,7 +118,7 @@ flowchart TD
         VM_CICD     -->|"NFS mount"| NFS_RG
         VM_RUNNER   -->|"NFS backup"| NFS_BK
 
-        SWITCH["Switch L2\n192.168.1.1 (gateway)"]
+        SWITCH["Switch L2\n192.168.1.254 (gateway)"]
         I7 --- SWITCH
         I5 --- SWITCH
         RPI --- SWITCH
@@ -450,7 +450,7 @@ volumeBindingMode: Immediate
 | K3s Pod CIDR | `10.42.0.0/16` | Flannel VXLAN — IPs dos Pods |
 | K3s Service CIDR | `10.43.0.0/16` | ClusterIP Services |
 | MetalLB Pool | `192.168.1.200–192.168.1.220` | LoadBalancer Services (21 IPs) |
-| Gateway | `192.168.1.1` | Roteador doméstico |
+| Gateway | `192.168.1.254` | Roteador doméstico |
 
 ### 7.4 Velero — estratégia de backup
 
@@ -471,7 +471,7 @@ O NetBox (Network Source of Truth) funciona como a camada de **IPAM (IP Address 
 
 | Atributo | Valor |
 |---|---|
-| Host | `192.168.1.30` |
+| Host | `192.168.1.72` |
 | Porta | `8000` (HTTP) |
 | Deployment | VM no Proxmox (`notebook-i7`) |
 
@@ -488,14 +488,16 @@ O NetBox (Network Source of Truth) funciona como a camada de **IPAM (IP Address 
 
 | Endereço | Host/Serviço | Status | Tipo |
 |---|---|---|---|
-| `192.168.1.5/24` | NAS Storage | Active | Device |
-| `192.168.1.10/24` | notebook-i7 (Proxmox host) | Active | Device |
-| `192.168.1.11/24` | notebook-i5 (k3s worker monitoring) | Active | Device |
-| `192.168.1.12/24` | raspberry-pi (k3s worker edge) | Active | Device |
-| `192.168.1.20/24` | k3s-server VM | Active | Virtual Machine |
-| `192.168.1.21/24` | k3s-worker-cicd VM | Active | Virtual Machine |
-| `192.168.1.22/24` | ci-runner VM | Active | Virtual Machine |
-| `192.168.1.30/24` | NetBox IPAM VM | Active | Virtual Machine |
+| `192.168.1.20/24` | notebook-i7 (Proxmox host) | Active | Device |
+| `192.168.1.65/24` | notebook-i5 (k3s worker monitoring) | Active | Device |
+| `192.168.1.72/24` | NetBox IPAM VM | Active | Virtual Machine |
+| `192.168.1.76/24` | BookStack (wiki interna) | Active | Virtual Machine |
+| `192.168.1.107/24` | HomeAssistant (automação residencial) | Active | Virtual Machine |
+| `192.168.1.110/24` | raspberry-pi (k3s worker edge) | Active | Device |
+| `192.168.1.112/24` | NAS Storage | Active | Device |
+| `192.168.1.30/24` | k3s-server VM | Active | Virtual Machine |
+| `192.168.1.31/24` | k3s-worker-cicd VM | Active | Virtual Machine |
+| `192.168.1.32/24` | ci-runner VM | Active | Virtual Machine |
 | `192.168.1.200/28` | MetalLB — Gitea | Active | LoadBalancer VIP |
 | `192.168.1.201/28` | MetalLB — Harbor | Active | LoadBalancer VIP |
 | `192.168.1.202/28` | MetalLB — ArgoCD UI | Active | LoadBalancer VIP |
@@ -506,9 +508,9 @@ O NetBox (Network Source of Truth) funciona como a camada de **IPAM (IP Address 
 
 ```mermaid
 flowchart LR
-    subgraph IPAM["NetBox — 192.168.1.30:8000"]
+    subgraph IPAM["NetBox — 192.168.1.72:8000"]
         NB_PREFIX["Prefix\n192.168.1.0/24"]
-        NB_IP["netbox_ip_address\n192.168.1.20/24\n(status: active)"]
+        NB_IP["netbox_ip_address\n192.168.1.30/24\n(status: active)"]
         NB_VM["Virtual Machine\nk3s-server\n(cluster: proxmox-lab)"]
         NB_PREFIX --> NB_IP --> NB_VM
     end
@@ -529,7 +531,7 @@ flowchart LR
     IPAM -->|"API REST\nJSON"| ANS_INV
 
     PROXMOX["Proxmox VE\n(VM criada com IP\nconsistente)"]
-    TF_PVE -->|"cloud-init\nIP = 192.168.1.20"| PROXMOX
+    TF_PVE -->|"cloud-init\nIP = 192.168.1.30"| PROXMOX
 ```
 
 **Inventário dinâmico Ansible via NetBox:**
@@ -538,7 +540,7 @@ O arquivo `ansible/inventory/netbox.yml` usa o plugin `netbox.netbox.nb_inventor
 
 ```bash
 # Usar o inventário dinâmico NetBox:
-export NETBOX_URL=http://192.168.1.30:8000
+export NETBOX_URL=http://192.168.1.72:8000
 export NETBOX_TOKEN=<token>
 ansible-playbook -i inventory/netbox.yml playbooks/01-base-setup.yml
 
@@ -747,11 +749,11 @@ A ordem abaixo é obrigatória. Dependências em cadeia tornam inviável pular e
 
 ```
 [ ] 0. Configurar NetBox IPAM (já deployado — configurar para o lab):
-        Acessar: http://192.168.1.30:8000
+        Acessar: http://192.168.1.72:8000
         Criar site: lab-home
         Criar prefix: 192.168.1.0/24 (status: active)
         Gerar API token em: /user/api-tokens/
-        Exportar: export NETBOX_URL=http://192.168.1.30:8000
+        Exportar: export NETBOX_URL=http://192.168.1.72:8000
                   export NETBOX_TOKEN=<token-gerado>
         O Terraform registrará automaticamente VMs e IPs via: terraform apply
 [ ] 1. Configurar NAS: criar exports NFS (/k8s-pv, /backups, /registry)
@@ -760,8 +762,8 @@ A ordem abaixo é obrigatória. Dependências em cadeia tornam inviável pular e
         Versão recomendada: Proxmox VE 8.x (Debian 12 base)
 [ ] 3. Criar VMs no Proxmox via Terraform (k3s-server, k3s-worker-cicd, ci-runner)
         IPs alocados automaticamente via NetBox IPAM (terraform/proxmox/netbox.tf)
-        Verificar no NetBox: http://192.168.1.30:8000/ipam/ip-addresses/
-        Os IPs 192.168.1.20-22 devem aparecer com status "Active"
+        Verificar no NetBox: http://192.168.1.72:8000/ipam/ip-addresses/
+        Os IPs 192.168.1.30-22 devem aparecer com status "Active"
 [ ] 4. Instalar Ubuntu Server no notebook-i5
         Configurar IP estático em 192.168.1.x
 [ ] 5. Verificar Raspbian 12 no raspberry-pi

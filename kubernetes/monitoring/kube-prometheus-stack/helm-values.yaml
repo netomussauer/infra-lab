@@ -197,7 +197,7 @@ prometheus:
     additionalScrapeConfigs:
       - job_name: "k3s-server"
         static_configs:
-          - targets: ["192.168.1.20:10250"]
+          - targets: ["192.168.1.30:10250"]
         scheme: https
         tls_config:
           insecure_skip_verify: true
@@ -205,7 +205,7 @@ prometheus:
 
       - job_name: "nfs-server"
         static_configs:
-          - targets: ["192.168.1.5:9100"]
+          - targets: ["192.168.1.112:9100"]
         # Assumindo node_exporter instalado no NAS (Synology/TrueNAS)
 
     podAnnotations:

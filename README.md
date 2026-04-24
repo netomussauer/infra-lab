@@ -2,14 +2,22 @@
 
 Laboratório completo de infraestrutura home-lab com cluster Kubernetes K3s multi-nó, pipeline CI/CD, monitoramento centralizado e IPAM via NetBox.
 
-## Hardware
+## Inventário da rede
 
-| Host | CPU | RAM | OS | Papel |
-|------|-----|-----|----|-------|
-| `notebook-i7` | Intel i7-2670QM | 16 GB | Proxmox VE | Hypervisor — VMs K3s + NetBox |
-| `notebook-i5` | Intel i5-2450M | 8 GB | Ubuntu 22.04 | K3s worker — monitoring |
-| `raspberry-pi` | ARMv7 4-core | 1 GB | Raspbian 12 | K3s worker — edge |
-| `nas` | — | — | NAS OS | NFS storage (3 TB) |
+| IP | Host / Serviço | OS / Plataforma | Papel |
+| --- | --- | --- | --- |
+| `192.168.1.20` | notebook-i7 | Proxmox VE | Hypervisor — VMs K3s + serviços |
+| `192.168.1.30` | k3s-server *(VM)* | Ubuntu 22.04 | K3s control-plane |
+| `192.168.1.31` | k3s-worker-cicd *(VM)* | Ubuntu 22.04 | K3s worker — CI/CD |
+| `192.168.1.32` | ci-runner *(VM)* | Ubuntu 22.04 | Tekton runner |
+| `192.168.1.65` | notebook-i5 | Ubuntu 22.04 | K3s worker — monitoring |
+| `192.168.1.72` | netbox-vm *(VM)* | — | NetBox IPAM |
+| `192.168.1.76` | bookstack *(VM)* | — | Wiki / documentação |
+| `192.168.1.107` | homeassistant *(VM)* | — | Automação residencial |
+| `192.168.1.110` | raspberry-pi | Raspbian 12 | K3s worker — edge (ARMv7) |
+| `192.168.1.112` | nas | NAS OS | NFS storage (3 TB) |
+| `192.168.1.200–220` | MetalLB pool | — | LoadBalancer Services K3s |
+| `192.168.1.254` | gateway | — | Roteador doméstico |
 
 ## Stack
 
@@ -100,7 +108,7 @@ cp terraform/proxmox/terraform.tfvars.example terraform/proxmox/terraform.tfvars
 #   proxmox_api_token_id, proxmox_api_token_secret, ssh_public_key
 #   netbox_url, netbox_token
 
-export NETBOX_URL=http://192.168.1.30:8000
+export NETBOX_URL=http://192.168.1.72:8000
 export NETBOX_TOKEN=<token gerado em /user/api-tokens/>
 ```
 
@@ -123,7 +131,7 @@ export KUBECONFIG=~/.kube/infra-lab.yaml
 | Harbor | `https://192.168.1.201` |
 | ArgoCD | `http://192.168.1.202` |
 | Grafana | `http://192.168.1.210` |
-| NetBox | `http://192.168.1.30:8000` |
+| NetBox | `http://192.168.1.72:8000` |
 
 ## Inventário dinâmico Ansible via NetBox
 

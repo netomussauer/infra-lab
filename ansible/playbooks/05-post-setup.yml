@@ -183,10 +183,10 @@
             kubectl get nodes
 
           Sumário de nós e papéis:
-          - k3s-server      (192.168.1.20) — control-plane [NoSchedule]
-          - k3s-worker-cicd (192.168.1.21) — worker cicd
-          - ci-runner       (192.168.1.22) — worker runner
-          - notebook-i5     (192.168.1.11) — worker monitoring
-          - raspberry-pi    (192.168.1.12) — worker edge (arm)
+          - k3s-server      (192.168.1.30) — control-plane [NoSchedule]
+          - k3s-worker-cicd (192.168.1.31) — worker cicd
+          - ci-runner       (192.168.1.32) — worker runner
+          - notebook-i5     (192.168.1.65) — worker monitoring
+          - raspberry-pi    (192.168.1.110) — worker edge (arm)
           ============================================================
       tags: [k3s, verify]

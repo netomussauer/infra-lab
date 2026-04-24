@@ -9,7 +9,7 @@
 #   ansible-galaxy collection install netbox.netbox
 #
 # Variáveis de ambiente necessárias:
-#   NETBOX_URL   — URL base do NetBox (ex: http://192.168.1.30:8000)
+#   NETBOX_URL   — URL base do NetBox (ex: http://192.168.1.72:8000)
 #   NETBOX_TOKEN — Token de API do NetBox (gerado em /user/api-tokens/)
 #
 # Uso:
@@ -20,7 +20,7 @@
 plugin: netbox.netbox.nb_inventory
 
 # URL da API do NetBox — lida da variável de ambiente ou usa o IP padrão do lab
-api_endpoint: "{{ lookup('env', 'NETBOX_URL') | default('http://192.168.1.30:8000') }}"
+api_endpoint: "{{ lookup('env', 'NETBOX_URL') | default('http://192.168.1.72:8000') }}"
 
 # Token de autenticação — NUNCA coloque o valor real aqui; use variável de ambiente ou vault
 token: "{{ lookup('env', 'NETBOX_TOKEN') }}"

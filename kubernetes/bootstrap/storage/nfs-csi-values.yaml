@@ -13,7 +13,7 @@
 #     --namespace kube-system
 
 nfs:
-  server: "192.168.1.5"
+  server: "192.168.1.112"
   path: "/k8s-pv"
   # Montar com NFSv4.1 para melhor compatibilidade e performance
   mountOptions:

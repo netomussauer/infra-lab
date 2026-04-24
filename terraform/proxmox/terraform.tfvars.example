@@ -14,7 +14,7 @@
 # O token_id terá o formato: root@pam!terraform-token
 # O token_secret é o UUID exibido UMA VEZ na criação (guarde-o)
 
-proxmox_api_url          = "https://192.168.1.10:8006/api2/json"
+proxmox_api_url          = "https://192.168.1.20:8006/api2/json"
 proxmox_api_token_id     = "root@pam!terraform-token"
 proxmox_api_token_secret = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 
@@ -39,8 +39,8 @@ vm_template_id = 9000
 proxmox_node = "notebook-i7"
 vm_storage   = "local-lvm"
 vm_bridge    = "vmbr0"
-gateway      = "192.168.1.1"
-dns_servers  = ["192.168.1.1", "8.8.8.8"]
+gateway      = "192.168.1.254"
+dns_servers  = ["192.168.1.254", "8.8.8.8"]
 lab_network  = "192.168.1.0/24"
 
 # ---------------------------------------------------------------------------
@@ -49,5 +49,5 @@ lab_network  = "192.168.1.0/24"
 # URL base do NetBox já deployado como VM no Proxmox lab.
 # Gerar token em: http://<netbox-ip>/user/api-tokens/
 #   Permissões mínimas necessárias: read/write em IPAM e Virtualization
-netbox_url   = "http://192.168.1.30:8000"
+netbox_url   = "http://192.168.1.72:8000"
 netbox_token = "seu-token-aqui"

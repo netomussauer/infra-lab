@@ -16,7 +16,7 @@
 #   # ansible-galaxy collection install -r ansible/requirements.yml
 #
 # Variáveis de ambiente (preferencial para evitar credenciais em disco):
-#   export NETBOX_URL="http://192.168.1.30:8000"
+#   export NETBOX_URL="http://192.168.1.72:8000"
 #   export NETBOX_TOKEN="seu-token-aqui"
 #
 # Uso:
@@ -32,7 +32,7 @@
 
   vars:
     # URL base do NetBox — lida da variável de ambiente ou usa o IP padrão do lab
-    netbox_url: "{{ lookup('env', 'NETBOX_URL') | default('http://192.168.1.30:8000') }}"
+    netbox_url: "{{ lookup('env', 'NETBOX_URL') | default('http://192.168.1.72:8000') }}"
     # Token de API — NUNCA comite o valor real; use variável de ambiente ou ansible-vault
     netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') }}"
     # Parâmetros compartilhados para todos os módulos netbox
@@ -230,7 +230,7 @@
       netbox.netbox.netbox_ip_address:
         <<: *netbox_common
         data:
-          address:     "192.168.1.11/24"
+          address:     "192.168.1.65/24"
           status:      active
           description: "notebook-i5 (k3s monitoring worker)"
           assigned_object:
@@ -244,7 +244,7 @@
       netbox.netbox.netbox_ip_address:
         <<: *netbox_common
         data:
-          address:     "192.168.1.12/24"
+          address:     "192.168.1.110/24"
           status:      active
           description: "raspberry-pi (k3s edge worker, ARMv7)"
           assigned_object:
@@ -258,7 +258,7 @@
       netbox.netbox.netbox_ip_address:
         <<: *netbox_common
         data:
-          address:     "192.168.1.5/24"
+          address:     "192.168.1.112/24"
           status:      active
           description: "NAS Storage"
           assigned_object:

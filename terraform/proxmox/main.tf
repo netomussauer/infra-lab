@@ -102,7 +102,7 @@ resource "proxmox_virtual_environment_vm" "k3s_server" {
 
   # Configuração cloud-init: usuário, SSH, hostname e IP alocado via NetBox IPAM.
   # O IP é lido do objeto netbox_ip_address.k3s_server criado em netbox.tf,
-  # eliminando o valor hardcoded "192.168.1.20/24".
+  # eliminando o valor hardcoded "192.168.1.30/24".
   initialization {
     hostname = "k3s-server"
 

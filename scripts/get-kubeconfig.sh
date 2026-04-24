@@ -8,7 +8,7 @@
 #   ./scripts/get-kubeconfig.sh --output ~/.kube/meu-lab.yaml
 #
 # O que faz:
-#   1. Conecta via SSH no k3s-server (192.168.1.20)
+#   1. Conecta via SSH no k3s-server (192.168.1.30)
 #   2. Lê /etc/rancher/k3s/k3s.yaml
 #   3. Substitui 127.0.0.1/localhost pelo IP real do servidor
 #   4. Salva em ~/.kube/infra-lab.yaml (ou caminho customizado)
@@ -20,7 +20,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # Configuração
 # ---------------------------------------------------------------------------
-K3S_SERVER_IP="192.168.1.20"
+K3S_SERVER_IP="192.168.1.30"
 K3S_SERVER_USER="labadmin"
 SSH_KEY="${HOME}/.ssh/lab_id_rsa"
 REMOTE_KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
@@ -47,7 +47,7 @@ while [[ $# -gt 0 ]]; do
             echo "Uso: $0 [--output CAMINHO] [--server IP] [--key CHAVE_SSH]"
             echo ""
             echo "  --output, -o  Caminho local para salvar o kubeconfig (padrão: ~/.kube/infra-lab.yaml)"
-            echo "  --server, -s  IP do K3s server (padrão: 192.168.1.20)"
+            echo "  --server, -s  IP do K3s server (padrão: 192.168.1.30)"
             echo "  --key, -k     Caminho da chave SSH (padrão: ~/.ssh/lab_id_rsa)"
             exit 0
             ;;

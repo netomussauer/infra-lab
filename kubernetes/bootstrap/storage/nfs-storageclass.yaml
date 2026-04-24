@@ -10,8 +10,8 @@
 # Para K3s, o kubeletDir correto é /var/lib/rancher/k3s/agent/kubelet:
 #   --set kubeletDir=/var/lib/rancher/k3s/agent/kubelet
 #
-# NAS: 192.168.1.5 | Export path: /k8s-pv
-# Verificar export no NAS: showmount -e 192.168.1.5
+# NAS: 192.168.1.112 | Export path: /k8s-pv
+# Verificar export no NAS: showmount -e 192.168.1.112
 ---
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
@@ -30,7 +30,7 @@ metadata:
 provisioner: nfs.csi.k8s.io
 parameters:
   # Endereço do servidor NFS
-  server: "192.168.1.5"
+  server: "192.168.1.112"
   # Path base exportado no NAS — subdiretórios serão criados por PVC
   share: "/k8s-pv"
   # Montar com opções de performance/compatibilidade

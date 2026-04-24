@@ -10,7 +10,7 @@
 #   4. Monta os shares NFS
 #   5. Verifica a conectividade antes de montar
 #
-# NFS exports disponíveis no NAS (192.168.1.5):
+# NFS exports disponíveis no NAS (192.168.1.112):
 #   /k8s-pv   — volumes persistentes do Kubernetes
 #   /backups  — destino de backups dos workloads
 #
