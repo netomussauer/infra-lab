@@ -1,0 +1,235 @@
+# Playbook 01 — Configuração base de todos os nós do laboratório.
+#
+# Executa em: todos os nós (k3s_cluster + nós físicos que participam do cluster)
+# Idempotente: sim — seguro de re-executar a qualquer momento
+#
+# O que faz:
+#   1. Atualiza pacotes do sistema (apt)
+#   2. Instala pacotes base necessários para o cluster
+#   3. Configura timezone para America/Sao_Paulo
+#   4. Desativa swap (obrigatório para Kubernetes)
+#   5. Carrega módulos de kernel necessários para o K8s
+#   6. Aplica configurações sysctl para rede e Kubernetes
+#   7. Cria o usuário labadmin com sudo sem senha
+#   8. Endurece configuração SSH (sem login root, sem senha)
+#
+# Uso:
+#   ansible-playbook -i inventory/hosts.yml playbooks/01-base-setup.yml
+#   ansible-playbook -i inventory/hosts.yml playbooks/01-base-setup.yml --check --diff
+
+---
+- name: Configuração base dos nós do laboratório
+  hosts: k3s_cluster
+  become: true
+  gather_facts: true
+
+  handlers:
+    - name: Recarregar sshd
+      ansible.builtin.service:
+        name: sshd
+        state: reloaded
+
+    - name: Recarregar sysctl
+      ansible.builtin.command:
+        cmd: sysctl --system
+      changed_when: true
+
+  tasks:
+
+    # -------------------------------------------------------------------------
+    # Atualização de pacotes
+    # -------------------------------------------------------------------------
+
+    - name: Atualizar cache do apt
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+      tags: [packages]
+
+    - name: Realizar upgrade de pacotes de segurança
+      ansible.builtin.apt:
+        upgrade: safe
+        autoremove: true
+        autoclean: true
+      tags: [packages]
+
+    - name: Instalar pacotes base
+      ansible.builtin.apt:
+        name: "{{ base_packages }}"
+        state: present
+      tags: [packages]
+
+    # -------------------------------------------------------------------------
+    # Timezone
+    # -------------------------------------------------------------------------
+
+    - name: Configurar timezone para America/Sao_Paulo
+      community.general.timezone:
+        name: "{{ system_timezone }}"
+      tags: [timezone]
+
+    # -------------------------------------------------------------------------
+    # Swap — deve estar desativado para o Kubernetes funcionar corretamente
+    # -------------------------------------------------------------------------
+
+    - name: Desativar swap imediatamente (memória)
+      ansible.builtin.command:
+        cmd: swapoff -a
+      changed_when: ansible_swaptotal_mb > 0
+      tags: [swap]
+
+    - name: Remover entradas de swap do /etc/fstab (permanente)
+      ansible.builtin.replace:
+        path: /etc/fstab
+        regexp: '^([^#].*\s+swap\s+.*)$'
+        replace: '# \1  # desabilitado pelo Ansible para Kubernetes'
+        backup: true
+      tags: [swap]
+
+    - name: Desativar e mascarar serviço swap (systemd)
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: false
+        masked: true
+        state: stopped
+      loop:
+        - swap.target
+      failed_when: false
+      tags: [swap]
+
+    # -------------------------------------------------------------------------
+    # Módulos de kernel para Kubernetes/CNI
+    # -------------------------------------------------------------------------
+
+    - name: Garantir arquivo de módulos persistentes
+      ansible.builtin.file:
+        path: /etc/modules-load.d/k8s.conf
+        state: touch
+        mode: "0644"
+      changed_when: false
+      tags: [kernel]
+
+    - name: Configurar módulos de kernel para carregar no boot
+      ansible.builtin.lineinfile:
+        path: /etc/modules-load.d/k8s.conf
+        line: "{{ item }}"
+        state: present
+      loop: "{{ kernel_modules_k8s }}"
+      tags: [kernel]
+
+    - name: Carregar módulos de kernel agora
+      community.general.modprobe:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ kernel_modules_k8s }}"
+      tags: [kernel]
+
+    # -------------------------------------------------------------------------
+    # Configurações sysctl para Kubernetes
+    # -------------------------------------------------------------------------
+
+    - name: Aplicar configurações sysctl para K8s
+      ansible.posix.sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        sysctl_file: /etc/sysctl.d/99-k8s.conf
+        reload: true
+        state: present
+      loop: "{{ sysctl_k8s_settings }}"
+      tags: [sysctl]
+
+    # -------------------------------------------------------------------------
+    # Usuário labadmin
+    # -------------------------------------------------------------------------
+
+    - name: Criar grupo labadmin
+      ansible.builtin.group:
+        name: labadmin
+        state: present
+      tags: [users]
+
+    - name: Criar usuário labadmin
+      ansible.builtin.user:
+        name: labadmin
+        group: labadmin
+        groups: [sudo]
+        append: true
+        shell: /bin/bash
+        create_home: true
+        state: present
+        comment: "Usuário de administração do laboratório"
+      tags: [users]
+
+    - name: Criar diretório .ssh do labadmin
+      ansible.builtin.file:
+        path: /home/labadmin/.ssh
+        state: directory
+        owner: labadmin
+        group: labadmin
+        mode: "0700"
+      tags: [users]
+
+    - name: Configurar sudo sem senha para labadmin
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers.d/labadmin
+        line: "labadmin ALL=(ALL) NOPASSWD:ALL"
+        create: true
+        mode: "0440"
+        validate: "visudo -cf %s"
+      tags: [users]
+
+    # -------------------------------------------------------------------------
+    # Hardening SSH
+    # -------------------------------------------------------------------------
+
+    - name: Desabilitar login SSH como root
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PermitRootLogin'
+        line: 'PermitRootLogin no'
+        state: present
+        backup: true
+      notify: Recarregar sshd
+      tags: [ssh]
+
+    - name: Desabilitar autenticação por senha no SSH
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PasswordAuthentication'
+        line: 'PasswordAuthentication no'
+        state: present
+      notify: Recarregar sshd
+      tags: [ssh]
+
+    - name: Habilitar autenticação por chave pública
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PubkeyAuthentication'
+        line: 'PubkeyAuthentication yes'
+        state: present
+      notify: Recarregar sshd
+      tags: [ssh]
+
+    - name: Configurar ClientAliveInterval para evitar sessões fantasma
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?ClientAliveInterval'
+        line: 'ClientAliveInterval 120'
+        state: present
+      notify: Recarregar sshd
+      tags: [ssh]
+
+    # -------------------------------------------------------------------------
+    # Verificação final
+    # -------------------------------------------------------------------------
+
+    - name: Verificar que swap está desativado
+      ansible.builtin.assert:
+        that:
+          - ansible_swaptotal_mb == 0
+        fail_msg: >
+          ERRO: Swap ainda ativo em {{ inventory_hostname }}.
+          Reinicie o host e re-execute o playbook.
+        success_msg: "Swap desativado com sucesso em {{ inventory_hostname }}"
+      # Roda no final após swapoff para confirmar
+      tags: [verify, swap]

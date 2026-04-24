@@ -1,0 +1,23 @@
+# Variáveis específicas dos nós worker (agents) do K3s.
+# Estes valores sobrescrevem os de group_vars/all.yml para o grupo k3s_agents.
+
+# ---------------------------------------------------------------------------
+# Argumentos de instalação do k3s agent
+# ---------------------------------------------------------------------------
+# Flags passadas ao instalador do K3s para os nós agent.
+# Referência: https://docs.k3s.io/cli/agent
+k3s_agent_args: >-
+  --node-label managed-by=ansible
+  --kube-proxy-arg=conntrack-max-per-core=0
+
+# URL do servidor K3s para registro dos agents
+k3s_server_url: "https://{{ k3s_server_ip }}:{{ k3s_api_port }}"
+
+# Arquitetura padrão dos nodes (x86_64). Raspberry Pi sobrescreve para arm.
+k3s_node_arch: "amd64"
+
+# Label padrão para agents sem label específico definido em host_vars
+k3s_node_label: ""
+
+# Tempo máximo (segundos) para aguardar o node ficar Ready após instalação
+k3s_agent_ready_timeout: 120

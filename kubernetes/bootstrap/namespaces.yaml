@@ -1,0 +1,51 @@
+# bootstrap/namespaces.yaml
+# Namespaces principais do laboratório K3s
+# Aplicar antes de qualquer outro recurso: kubectl apply -f kubernetes/bootstrap/namespaces.yaml
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cicd
+  labels:
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    team: "platform"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+    env: "lab"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    team: "platform"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+    env: "lab"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: edge
+  labels:
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    team: "platform"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+    env: "lab"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: registry
+  labels:
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    team: "platform"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+    env: "lab"

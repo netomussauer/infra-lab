@@ -1,0 +1,220 @@
+# cicd/argocd/helm-values.yaml
+# Helm values para argo/argo-cd chart
+#
+# Repositório: https://argoproj.github.io/argo-helm
+# Chart: argo/argo-cd
+#
+# Instalar:
+#   helm repo add argo https://argoproj.github.io/argo-helm
+#   helm upgrade --install argocd argo/argo-cd \
+#     -f kubernetes/cicd/argocd/helm-values.yaml \
+#     --namespace cicd --create-namespace
+#
+# IP MetalLB alocado: 192.168.1.203
+# Acesso: http://192.168.1.203
+# Credenciais: admin / (ver instrução abaixo)
+#   kubectl -n cicd get secret argocd-initial-admin-secret \
+#     -o jsonpath='{.data.password}' | base64 -d
+
+# Configurações globais
+global:
+  nodeSelector:
+    workload: "cicd"
+
+  tolerations: []
+
+  podLabels:
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+
+# Configurações do servidor ArgoCD
+configs:
+  params:
+    # Desabilitar TLS no ArgoCD server (lab — terminação no LB ou ingress)
+    server.insecure: true
+    # Habilitar helm para aplicações
+    application.instanceLabelKey: "argocd.argoproj.io/app-name"
+
+  cm:
+    # Repositório Gitea configurado via UI ou ApplicationSet
+    url: "http://192.168.1.203"
+    # Timeout de reconciliação
+    timeout.reconciliation: "180s"
+    # Habilitar status badge
+    statusbadge.enabled: "true"
+
+  rbac:
+    policy.default: "role:readonly"
+    policy.csv: |
+      p, role:admin, applications, *, */*, allow
+      p, role:admin, clusters, *, *, allow
+      p, role:admin, repositories, *, *, allow
+      p, role:admin, logs, *, *, allow
+      p, role:admin, exec, *, */*, allow
+      g, labadmin, role:admin
+
+# ArgoCD Server
+server:
+  replicas: 1
+
+  nodeSelector:
+    workload: "cicd"
+
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+  service:
+    type: LoadBalancer
+    loadBalancerIP: "192.168.1.203"
+    annotations:
+      metallb.universe.tf/address-pool: "lab-pool"
+    port: 80
+    targetPort: 8080
+
+  # Probes
+  livenessProbe:
+    enabled: true
+    httpGet:
+      path: /healthz?full=true
+      port: 8080
+    initialDelaySeconds: 30
+    periodSeconds: 15
+    failureThreshold: 3
+    successThreshold: 1
+
+  readinessProbe:
+    enabled: true
+    httpGet:
+      path: /healthz?full=true
+      port: 8080
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    failureThreshold: 3
+    successThreshold: 1
+
+  # Métricas
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false   # habilitar após kube-prometheus-stack instalado
+
+# Application Controller
+controller:
+  replicas: 1
+
+  nodeSelector:
+    workload: "cicd"
+
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "256Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false
+
+# Repo Server
+repoServer:
+  replicas: 1
+
+  nodeSelector:
+    workload: "cicd"
+
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+  # Probes
+  livenessProbe:
+    enabled: true
+    httpGet:
+      path: /healthz?full=true
+      port: 8081
+    initialDelaySeconds: 30
+    periodSeconds: 15
+    failureThreshold: 3
+    successThreshold: 1
+
+  readinessProbe:
+    enabled: true
+    httpGet:
+      path: /healthz?full=true
+      port: 8081
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    failureThreshold: 3
+    successThreshold: 1
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false
+
+# ApplicationSet Controller
+applicationSet:
+  enabled: true
+  replicas: 1
+
+  nodeSelector:
+    workload: "cicd"
+
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "256Mi"
+
+# Notifications Controller
+notifications:
+  enabled: true
+
+  nodeSelector:
+    workload: "cicd"
+
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"
+
+# Redis (cache interno do ArgoCD)
+redis:
+  enabled: true
+
+  nodeSelector:
+    workload: "cicd"
+
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"
+
+# DEX (OIDC — desabilitado no lab)
+dex:
+  enabled: false
+
+# Desabilitar HA Redis no lab
+redis-ha:
+  enabled: false

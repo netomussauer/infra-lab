@@ -1,0 +1,487 @@
+# cicd/tekton/pipeline-build-push.yaml
+# Tekton Pipeline completo: git-clone → build (kaniko) → push → update-manifest
+#
+# Pré-requisito: Tekton Pipelines instalado
+#   kubectl apply --filename https://storage.googleapis.com/tekton-releases/pipeline/latest/release.yaml
+#
+# Secret necessário para push no Harbor:
+#   kubectl create secret docker-registry harbor-registry-secret \
+#     --docker-server=harbor.lab.local \
+#     --docker-username=admin \
+#     --docker-password=Harbor12345! \
+#     --namespace=cicd
+#
+# Secret necessário para push ao Git (update-manifest):
+#   kubectl create secret generic gitea-auth-secret \
+#     --from-literal=username=labadmin \
+#     --from-literal=password=labadmin123! \
+#     --namespace=cicd
+
+---
+# Task: git-clone
+# Clona o repositório de código-fonte para o workspace compartilhado
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: git-clone
+  namespace: cicd
+  labels:
+    app.kubernetes.io/name: "git-clone"
+    app.kubernetes.io/component: "tekton-task"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+spec:
+  params:
+    - name: url
+      type: string
+      description: "URL do repositório Git"
+    - name: revision
+      type: string
+      description: "Branch, tag ou commit SHA"
+      default: "HEAD"
+    - name: depth
+      type: string
+      description: "Profundidade do clone (0 = completo)"
+      default: "1"
+  workspaces:
+    - name: source
+      description: "Workspace onde o código será clonado"
+  results:
+    - name: commit
+      description: "SHA do commit clonado"
+    - name: url
+      description: "URL usada no clone"
+  steps:
+    - name: clone
+      image: "alpine/git:2.43.0"
+      resources:
+        requests:
+          cpu: "50m"
+          memory: "64Mi"
+        limits:
+          cpu: "200m"
+          memory: "128Mi"
+      script: |
+        #!/bin/sh
+        set -e
+        CHECKOUT_DIR=$(workspaces.source.path)
+        cd $CHECKOUT_DIR
+
+        git init
+        git remote add origin "$(params.url)"
+
+        if [ "$(params.depth)" = "0" ]; then
+          git fetch --tags origin
+        else
+          git fetch --depth=$(params.depth) --tags origin "$(params.revision)"
+        fi
+
+        git checkout "$(params.revision)" 2>/dev/null || git checkout FETCH_HEAD
+
+        COMMIT_SHA=$(git rev-parse HEAD)
+        echo -n "$COMMIT_SHA" > $(results.commit.path)
+        echo -n "$(params.url)" > $(results.url.path)
+        echo "Clonado: $(params.url) @ $COMMIT_SHA"
+
+---
+# Task: kaniko-build-push
+# Build da imagem OCI usando Kaniko (sem Docker daemon) e push para Harbor
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: kaniko-build-push
+  namespace: cicd
+  labels:
+    app.kubernetes.io/name: "kaniko-build-push"
+    app.kubernetes.io/component: "tekton-task"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+spec:
+  params:
+    - name: image
+      type: string
+      description: "Nome completo da imagem (ex: harbor.lab.local/lab/app)"
+    - name: tag
+      type: string
+      description: "Tag da imagem"
+      default: "latest"
+    - name: dockerfile
+      type: string
+      description: "Caminho do Dockerfile relativo ao contexto"
+      default: "Dockerfile"
+    - name: context
+      type: string
+      description: "Contexto de build (relativo ao workspace)"
+      default: "."
+    - name: build-args
+      type: array
+      description: "Build args adicionais (--build-arg KEY=VALUE)"
+      default: []
+  workspaces:
+    - name: source
+      description: "Workspace com o código-fonte"
+    - name: docker-credentials
+      description: "Secret com credenciais Docker/Harbor (config.json)"
+  results:
+    - name: image-digest
+      description: "Digest SHA da imagem construída"
+    - name: image-url
+      description: "URL completa da imagem com tag"
+  steps:
+    - name: build-and-push
+      image: "gcr.io/kaniko-project/executor:v1.21.0"
+      resources:
+        requests:
+          cpu: "500m"
+          memory: "512Mi"
+        limits:
+          cpu: "2000m"
+          memory: "1Gi"
+      args:
+        - "--dockerfile=$(params.dockerfile)"
+        - "--context=dir://$(workspaces.source.path)/$(params.context)"
+        - "--destination=$(params.image):$(params.tag)"
+        - "--destination=$(params.image):latest"
+        - "--cache=true"
+        - "--cache-ttl=24h"
+        - "--snapshot-mode=redo"
+        - "--compressed-caching=false"
+        - "--digest-file=$(results.image-digest.path)"
+        # Aceitar registry com certificado self-signed do Harbor lab
+        - "--skip-tls-verify"
+      env:
+        - name: DOCKER_CONFIG
+          value: "/kaniko/.docker"
+      volumeMounts:
+        - name: docker-config
+          mountPath: /kaniko/.docker
+  volumes:
+    - name: docker-config
+      projected:
+        sources:
+          - secret:
+              name: harbor-registry-secret
+              items:
+                - key: .dockerconfigjson
+                  path: config.json
+
+---
+# Task: update-manifest
+# Atualiza a tag da imagem no manifesto YAML do repositório Git (GitOps flow)
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: update-manifest
+  namespace: cicd
+  labels:
+    app.kubernetes.io/name: "update-manifest"
+    app.kubernetes.io/component: "tekton-task"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+spec:
+  params:
+    - name: repo-url
+      type: string
+      description: "URL do repositório de manifests"
+    - name: repo-revision
+      type: string
+      description: "Branch alvo para o commit"
+      default: "main"
+    - name: manifest-path
+      type: string
+      description: "Caminho do arquivo de manifest a atualizar (ex: kubernetes/apps/myapp/deployment.yaml)"
+    - name: image-name
+      type: string
+      description: "Nome da imagem a substituir (ex: harbor.lab.local/lab/myapp)"
+    - name: new-tag
+      type: string
+      description: "Nova tag da imagem"
+    - name: git-user-email
+      type: string
+      description: "Email para o commit Git"
+      default: "tekton@lab.local"
+    - name: git-user-name
+      type: string
+      description: "Nome para o commit Git"
+      default: "Tekton Pipeline"
+  workspaces:
+    - name: manifest-repo
+      description: "Workspace para clonar o repositório de manifests"
+    - name: git-credentials
+      description: "Secret com usuario e senha do Gitea"
+  steps:
+    - name: clone-manifest-repo
+      image: "alpine/git:2.43.0"
+      resources:
+        requests:
+          cpu: "50m"
+          memory: "64Mi"
+        limits:
+          cpu: "200m"
+          memory: "128Mi"
+      script: |
+        #!/bin/sh
+        set -e
+        GIT_USER=$(cat $(workspaces.git-credentials.path)/username)
+        GIT_PASS=$(cat $(workspaces.git-credentials.path)/password)
+        REPO_URL=$(echo "$(params.repo-url)" | sed "s|http://|http://${GIT_USER}:${GIT_PASS}@|")
+
+        git clone --depth=1 --branch=$(params.repo-revision) "$REPO_URL" \
+          $(workspaces.manifest-repo.path)
+
+    - name: update-image-tag
+      image: "mikefarah/yq:4.40.5"
+      resources:
+        requests:
+          cpu: "50m"
+          memory: "64Mi"
+        limits:
+          cpu: "200m"
+          memory: "128Mi"
+      script: |
+        #!/bin/sh
+        set -e
+        MANIFEST="$(workspaces.manifest-repo.path)/$(params.manifest-path)"
+
+        # Atualiza todas as ocorrências da imagem no arquivo YAML
+        yq e '
+          (.spec.template.spec.containers[].image |
+            select(test("^$(params.image-name):"))) |= "$(params.image-name):$(params.new-tag)"
+        ' -i "$MANIFEST"
+
+        echo "Manifest atualizado:"
+        grep "image:" "$MANIFEST" | head -5
+
+    - name: commit-and-push
+      image: "alpine/git:2.43.0"
+      resources:
+        requests:
+          cpu: "50m"
+          memory: "64Mi"
+        limits:
+          cpu: "200m"
+          memory: "128Mi"
+      script: |
+        #!/bin/sh
+        set -e
+        cd $(workspaces.manifest-repo.path)
+
+        GIT_USER=$(cat $(workspaces.git-credentials.path)/username)
+        GIT_PASS=$(cat $(workspaces.git-credentials.path)/password)
+
+        git config user.email "$(params.git-user-email)"
+        git config user.name "$(params.git-user-name)"
+
+        git add $(params.manifest-path)
+        git diff --cached --quiet && echo "Sem mudancas para commitar" && exit 0
+
+        git commit -m "ci: update $(params.image-name) to tag $(params.new-tag)
+
+        Atualizado automaticamente pelo Tekton Pipeline.
+        Image: $(params.image-name):$(params.new-tag)"
+
+        REPO_URL=$(git remote get-url origin | sed "s|http://|http://${GIT_USER}:${GIT_PASS}@|")
+        git push "$REPO_URL" HEAD:$(params.repo-revision)
+        echo "Commit enviado com sucesso"
+
+---
+# Pipeline: build-and-push
+# Orquestra as tasks na sequência: git-clone → kaniko-build-push → update-manifest
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: build-and-push
+  namespace: cicd
+  labels:
+    app.kubernetes.io/name: "build-and-push"
+    app.kubernetes.io/component: "tekton-pipeline"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+spec:
+  params:
+    - name: source-repo-url
+      type: string
+      description: "URL do repositório de código-fonte"
+    - name: source-revision
+      type: string
+      description: "Branch/tag/commit do código-fonte"
+      default: "main"
+    - name: image-name
+      type: string
+      description: "Nome da imagem (sem tag) — ex: harbor.lab.local/lab/myapp"
+    - name: image-tag
+      type: string
+      description: "Tag para a imagem — ex: v1.2.3 ou commit SHA"
+    - name: dockerfile
+      type: string
+      description: "Caminho do Dockerfile"
+      default: "Dockerfile"
+    - name: manifest-repo-url
+      type: string
+      description: "URL do repositório de manifests"
+    - name: manifest-path
+      type: string
+      description: "Caminho do manifest a atualizar"
+
+  workspaces:
+    - name: source
+      description: "Código-fonte clonado"
+    - name: manifest-repo
+      description: "Repositório de manifests"
+    - name: docker-credentials
+      description: "Credenciais do Harbor"
+    - name: git-credentials
+      description: "Credenciais do Gitea"
+
+  results:
+    - name: image-digest
+      description: "Digest da imagem construída"
+      value: "$(tasks.build-push.results.image-digest)"
+    - name: image-url
+      description: "URL completa da imagem"
+      value: "$(tasks.build-push.results.image-url)"
+
+  tasks:
+    # Etapa 1: Clonar código-fonte
+    - name: clone-source
+      taskRef:
+        name: git-clone
+        kind: Task
+      params:
+        - name: url
+          value: "$(params.source-repo-url)"
+        - name: revision
+          value: "$(params.source-revision)"
+        - name: depth
+          value: "1"
+      workspaces:
+        - name: source
+          workspace: source
+
+    # Etapa 2: Build e Push da imagem com Kaniko
+    - name: build-push
+      taskRef:
+        name: kaniko-build-push
+        kind: Task
+      runAfter:
+        - clone-source
+      params:
+        - name: image
+          value: "$(params.image-name)"
+        - name: tag
+          value: "$(params.image-tag)"
+        - name: dockerfile
+          value: "$(params.dockerfile)"
+      workspaces:
+        - name: source
+          workspace: source
+        - name: docker-credentials
+          workspace: docker-credentials
+
+    # Etapa 3: Atualizar manifest GitOps
+    - name: update-gitops-manifest
+      taskRef:
+        name: update-manifest
+        kind: Task
+      runAfter:
+        - build-push
+      params:
+        - name: repo-url
+          value: "$(params.manifest-repo-url)"
+        - name: manifest-path
+          value: "$(params.manifest-path)"
+        - name: image-name
+          value: "$(params.image-name)"
+        - name: new-tag
+          value: "$(params.image-tag)"
+      workspaces:
+        - name: manifest-repo
+          workspace: manifest-repo
+        - name: git-credentials
+          workspace: git-credentials
+
+---
+# PipelineRun: Exemplo de execução manual do pipeline
+# Usar como referência ou para testes manuais
+# Executar: kubectl apply -f - <<EOF ... EOF
+# Ou: kubectl create -f pipeline-build-push.yaml (sem name fixo para evitar conflito)
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  # Sem name fixo — o generateName garante unicidade
+  generateName: "build-push-run-"
+  namespace: cicd
+  labels:
+    app.kubernetes.io/name: "build-push-run"
+    app.kubernetes.io/component: "tekton-pipelinerun"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+spec:
+  pipelineRef:
+    name: build-and-push
+
+  params:
+    - name: source-repo-url
+      value: "http://gitea.lab.local/lab/hello-lab.git"
+    - name: source-revision
+      value: "main"
+    - name: image-name
+      value: "harbor.lab.local/lab/hello-lab"
+    - name: image-tag
+      value: "v1.0.0"
+    - name: dockerfile
+      value: "Dockerfile"
+    - name: manifest-repo-url
+      value: "http://gitea.lab.local/lab/infra-lab.git"
+    - name: manifest-path
+      value: "kubernetes/apps/hello-lab/deployment.yaml"
+
+  workspaces:
+    - name: source
+      volumeClaimTemplate:
+        spec:
+          storageClassName: "nfs-storage"
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: "1Gi"
+
+    - name: manifest-repo
+      volumeClaimTemplate:
+        spec:
+          storageClassName: "nfs-storage"
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: "500Mi"
+
+    - name: docker-credentials
+      secret:
+        secretName: "harbor-registry-secret"
+
+    - name: git-credentials
+      secret:
+        secretName: "gitea-auth-secret"
+
+  # Timeout total do PipelineRun
+  timeouts:
+    pipeline: "1h"
+    tasks: "45m"
+
+  # Rodar no node cicd
+  taskRunTemplate:
+    podTemplate:
+      nodeSelector:
+        workload: "cicd"

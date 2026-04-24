@@ -1,0 +1,185 @@
+# cicd/gitea/helm-values.yaml
+# Helm values para gitea/gitea chart
+#
+# Repositório: https://dl.gitea.com/charts/
+# Chart: gitea-charts/gitea
+#
+# Instalar:
+#   helm repo add gitea-charts https://dl.gitea.com/charts/
+#   helm upgrade --install gitea gitea-charts/gitea \
+#     -f kubernetes/cicd/gitea/helm-values.yaml \
+#     --namespace cicd --create-namespace
+#
+# IP MetalLB alocado: 192.168.1.201
+# Acesso: http://192.168.1.201 ou http://gitea.lab.local (com DNS/hosts configurado)
+
+# Número de réplicas — 1 para SQLite (sem suporte a multi-replica com SQLite)
+replicaCount: 1
+
+image:
+  repository: gitea/gitea
+  tag: "1.21"
+  pullPolicy: IfNotPresent
+
+# Garantir que rode no node correto
+nodeSelector:
+  workload: "cicd"
+
+# Toleration apenas para casos de manutenção; não roda no control-plane
+tolerations: []
+
+affinity: {}
+
+resources:
+  requests:
+    cpu: "250m"
+    memory: "512Mi"
+  limits:
+    cpu: "1000m"
+    memory: "1Gi"
+
+# Service: LoadBalancer para expor via MetalLB
+service:
+  http:
+    type: LoadBalancer
+    port: 3000
+    # IP fixo no pool MetalLB
+    loadBalancerIP: "192.168.1.201"
+    annotations:
+      metallb.universe.tf/address-pool: "lab-pool"
+  ssh:
+    type: LoadBalancer
+    port: 22
+    loadBalancerIP: "192.168.1.201"
+    annotations:
+      metallb.universe.tf/address-pool: "lab-pool"
+
+# Persistência via NFS
+persistence:
+  enabled: true
+  storageClass: "nfs-storage"
+  size: "20Gi"
+  accessModes:
+    - ReadWriteOnce
+  claimName: "gitea-data"
+
+# Configuração do Gitea
+gitea:
+  admin:
+    username: "labadmin"
+    # Alterar senha após primeiro login!
+    # Gerada via: kubectl create secret generic gitea-admin-secret --from-literal=password=<senha>
+    password: "labadmin123!"
+    email: "jose.mussauer@stone.com.br"
+
+  config:
+    server:
+      DOMAIN: "gitea.lab.local"
+      ROOT_URL: "http://gitea.lab.local"
+      HTTP_PORT: 3000
+      SSH_DOMAIN: "gitea.lab.local"
+      SSH_PORT: 22
+      DISABLE_SSH: false
+      LFS_START_SERVER: true
+
+    database:
+      DB_TYPE: "sqlite3"
+      PATH: "/data/gitea/gitea.db"
+
+    repository:
+      DEFAULT_PRIVATE: false
+      DEFAULT_PUSH_CREATE_PRIVATE: false
+      ENABLE_PUSH_CREATE_USER: true
+      ENABLE_PUSH_CREATE_ORG: true
+
+    service:
+      DISABLE_REGISTRATION: false
+      REQUIRE_SIGNIN_VIEW: false
+      ALLOW_ONLY_INTERNAL_REGISTRATION: false
+
+    cache:
+      ADAPTER: "memory"
+
+    session:
+      PROVIDER: "file"
+
+    log:
+      LEVEL: "Info"
+      MODE: "console"
+
+    metrics:
+      ENABLED: true
+      TOKEN: ""
+
+  # Probes de saúde
+  livenessProbe:
+    enabled: true
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 60
+    periodSeconds: 15
+    failureThreshold: 5
+    successThreshold: 1
+
+  readinessProbe:
+    enabled: true
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 20
+    periodSeconds: 10
+    failureThreshold: 3
+    successThreshold: 1
+
+  startupProbe:
+    enabled: true
+    httpGet:
+      path: /
+      port: http
+    failureThreshold: 30
+    periodSeconds: 10
+
+# Desabilitar PostgreSQL e MySQL bundled (usando SQLite3)
+postgresql:
+  enabled: false
+
+postgresql-ha:
+  enabled: false
+
+mysql:
+  enabled: false
+
+# Redis para cache (opcional no lab — usando memória)
+redis-cluster:
+  enabled: false
+
+redis:
+  enabled: false
+
+# Init containers para setup
+initPreScript: ""
+
+# Métricas para Prometheus
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "3000"
+  prometheus.io/path: "/metrics"
+
+podLabels:
+  app.kubernetes.io/name: "gitea"
+  app.kubernetes.io/version: "1.21"
+  app.kubernetes.io/component: "git-server"
+  app.kubernetes.io/managed-by: "helm"
+  environment: "lab"
+  lab_id: "lab-k8s-01"
+  lab_owner: "jose.mussauer"
+
+# SecurityContext
+securityContext:
+  runAsNonRoot: false   # Gitea precisa de UID 1000, mas o chart gerencia isso
+  fsGroup: 1000
+
+containerSecurityContext:
+  runAsUser: 1000
+  runAsGroup: 1000

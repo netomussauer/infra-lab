@@ -1,0 +1,128 @@
+# apps/hello-lab/service.yaml
+# Service ClusterIP + Ingress para hello-lab
+# Host: hello.lab.local
+#
+# Pré-requisito: Ingress controller instalado
+# K3s inclui Traefik por padrão. Para usar nginx-ingress:
+#   helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+#   helm install ingress-nginx ingress-nginx/ingress-nginx --namespace kube-system
+#
+# Adicionar ao /etc/hosts (ou DNS local):
+#   192.168.1.205  hello.lab.local   (IP do Ingress Controller LoadBalancer)
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-lab
+  namespace: default
+  labels:
+    app.kubernetes.io/name: "hello-lab"
+    app.kubernetes.io/version: "v1"
+    app.kubernetes.io/component: "api"
+    app.kubernetes.io/managed-by: "argocd"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+  annotations:
+    prometheus.io/scrape: "false"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: "hello-lab"
+    environment: "lab"
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP
+
+---
+# Ingress para Traefik (K3s padrão)
+# Se usar nginx-ingress, trocar a annotation kubernetes.io/ingress.class
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello-lab
+  namespace: default
+  labels:
+    app.kubernetes.io/name: "hello-lab"
+    app.kubernetes.io/version: "v1"
+    app.kubernetes.io/component: "ingress"
+    app.kubernetes.io/managed-by: "argocd"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+  annotations:
+    # Traefik (K3s padrão)
+    kubernetes.io/ingress.class: "traefik"
+    # Para nginx-ingress, substituir por:
+    # kubernetes.io/ingress.class: "nginx"
+    #
+    # Reescrever path (compatível com nginx-ingress)
+    # nginx.ingress.kubernetes.io/rewrite-target: /
+    #
+    # Timeout de proxy
+    traefik.ingress.kubernetes.io/router.entrypoints: "web"
+spec:
+  rules:
+    - host: "hello.lab.local"
+      http:
+        paths:
+          - path: "/"
+            pathType: Prefix
+            backend:
+              service:
+                name: hello-lab
+                port:
+                  number: 80
+
+---
+# NetworkPolicy — restringe tráfego de entrada ao hello-lab
+# Permite apenas tráfego do Ingress Controller e do namespace monitoring (Prometheus)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hello-lab-netpol
+  namespace: default
+  labels:
+    app.kubernetes.io/name: "hello-lab"
+    app.kubernetes.io/component: "network-policy"
+    app.kubernetes.io/managed-by: "argocd"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "hello-lab"
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Tráfego HTTP do Ingress Controller (Traefik/nginx no kube-system)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "kube-system"
+      ports:
+        - protocol: TCP
+          port: 80
+    # Scraping do Prometheus (namespace monitoring)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "monitoring"
+      ports:
+        - protocol: TCP
+          port: 80
+  egress:
+    # DNS (CoreDNS K3s)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "kube-system"
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

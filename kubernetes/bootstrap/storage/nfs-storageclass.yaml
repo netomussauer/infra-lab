@@ -1,0 +1,42 @@
+# bootstrap/storage/nfs-storageclass.yaml
+# StorageClass NFS via driver CSI nfs.csi.k8s.io
+#
+# Pré-requisito: NFS CSI Driver instalado no cluster
+#   helm repo add csi-driver-nfs https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/charts
+#   helm install csi-driver-nfs csi-driver-nfs/csi-driver-nfs \
+#     --namespace kube-system \
+#     --set kubeletDir=/var/lib/kubelet
+#
+# Para K3s, o kubeletDir correto é /var/lib/rancher/k3s/agent/kubelet:
+#   --set kubeletDir=/var/lib/rancher/k3s/agent/kubelet
+#
+# NAS: 192.168.1.5 | Export path: /k8s-pv
+# Verificar export no NAS: showmount -e 192.168.1.5
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: nfs-storage
+  annotations:
+    # Define como StorageClass padrão do cluster
+    storageclass.kubernetes.io/is-default-class: "true"
+  labels:
+    app.kubernetes.io/name: "nfs-storage"
+    app.kubernetes.io/component: "storage"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+provisioner: nfs.csi.k8s.io
+parameters:
+  # Endereço do servidor NFS
+  server: "192.168.1.5"
+  # Path base exportado no NAS — subdiretórios serão criados por PVC
+  share: "/k8s-pv"
+  # Montar com opções de performance/compatibilidade
+  mountOptions: "nfsvers=4.1,hard,timeo=600,retrans=2"
+# Retain: o PV permanece após deletar o PVC (evita perda acidental de dados no lab)
+reclaimPolicy: Retain
+# Immediate: PV é provisionado assim que o PVC é criado (sem aguardar o pod)
+volumeBindingMode: Immediate
+allowVolumeExpansion: true

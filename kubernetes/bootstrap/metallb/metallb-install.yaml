@@ -1,0 +1,46 @@
+# bootstrap/metallb/metallb-install.yaml
+#
+# Este arquivo documenta o processo de instalação do MetalLB no cluster K3s.
+# O MetalLB é instalado via manifesto oficial da URL abaixo.
+#
+# ATENÇÃO: K3s já inclui o klipper-lb como service-LB padrão.
+# Desabilite-o antes de instalar o MetalLB usando a flag:
+#   --disable servicelb
+# no arquivo de configuração do K3s: /etc/rancher/k3s/config.yaml
+#
+# Sequência de instalação:
+#   1. Desabilitar klipper-lb no K3s (se ainda não feito):
+#      echo "disable: servicelb" >> /etc/rancher/k3s/config.yaml
+#      systemctl restart k3s
+#
+#   2. Aplicar manifesto oficial do MetalLB:
+#      kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.3/config/manifests/metallb-native.yaml
+#
+#   3. Aguardar pods ficarem Running:
+#      kubectl wait --namespace metallb-system \
+#        --for=condition=ready pod \
+#        --selector=app=metallb \
+#        --timeout=120s
+#
+#   4. Aplicar pool de IPs e advertisement:
+#      kubectl apply -f kubernetes/bootstrap/metallb/ipaddresspool.yaml
+#
+# Namespace criado automaticamente pelo manifesto oficial.
+# Este arquivo serve como referência e documentação do processo.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: metallb-system
+  labels:
+    app.kubernetes.io/name: "metallb"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+  annotations:
+    # Manifesto oficial MetalLB v0.14.3 — instalar via:
+    # kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.3/config/manifests/metallb-native.yaml
+    metallb.io/install-url: "https://raw.githubusercontent.com/metallb/metallb/v0.14.3/config/manifests/metallb-native.yaml"
+    metallb.io/mode: "L2"
+    metallb.io/pool: "192.168.1.200-192.168.1.220"

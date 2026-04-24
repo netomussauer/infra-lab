@@ -1,0 +1,201 @@
+# Playbook 04 — Instalação do K3s nos nós worker (agents).
+#
+# Executa em: k3s_agents (k3s-worker-cicd, ci-runner, notebook-i5, raspberry-pi)
+# Idempotente: sim — verifica instalação e versão antes de instalar
+# Pré-requisito: playbook 03-k3s-server.yml deve ter sido executado antes
+#                (o token K3s precisa estar disponível em hostvars do server)
+#
+# O que faz:
+#   1. Recupera o token de join gerado no playbook anterior
+#   2. Determina a arquitetura correta do binário (amd64 ou arm para Raspberry Pi)
+#   3. Instala K3s agent em cada nó apontando para o control-plane
+#   4. Aplica node labels conforme definido no inventário
+#   5. Aguarda todos os nós ficarem Ready
+#
+# Uso:
+#   ansible-playbook -i inventory/hosts.yml playbooks/04-k3s-agents.yml
+#   ansible-playbook -i inventory/hosts.yml playbooks/04-k3s-agents.yml --check --diff
+
+---
+
+# ---------------------------------------------------------------------------
+# Play 1: Recuperar token do control-plane
+# ---------------------------------------------------------------------------
+
+- name: Recuperar token K3s do control-plane
+  hosts: k3s_server
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Ler token de join do K3s server
+      ansible.builtin.slurp:
+        src: "{{ k3s_token_path }}"
+      register: k3s_token_raw
+      tags: [k3s, token]
+
+    - name: Definir fact com o token
+      ansible.builtin.set_fact:
+        k3s_join_token: "{{ k3s_token_raw.content | b64decode | trim }}"
+      tags: [k3s, token]
+
+# ---------------------------------------------------------------------------
+# Play 2: Instalar K3s agent em cada worker
+# ---------------------------------------------------------------------------
+
+- name: Instalar e configurar K3s workers
+  hosts: k3s_agents
+  become: true
+  gather_facts: true
+  serial: 1  # Instalar um nó por vez para evitar sobrecarga no control-plane
+
+  tasks:
+
+    # -------------------------------------------------------------------------
+    # Verificar estado atual
+    # -------------------------------------------------------------------------
+
+    - name: Verificar se K3s já está instalado
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s
+      register: k3s_binary
+      tags: [k3s, install]
+
+    - name: Verificar versão do K3s instalada (se existir)
+      ansible.builtin.command:
+        cmd: k3s --version
+      register: k3s_installed_version
+      changed_when: false
+      failed_when: false
+      when: k3s_binary.stat.exists
+      tags: [k3s, install]
+
+    # -------------------------------------------------------------------------
+    # Determinar URL correta de download por arquitetura
+    # -------------------------------------------------------------------------
+
+    # O script get.k3s.io detecta automaticamente a arquitetura, mas para ARM
+    # precisamos garantir que a variável de ambiente correta seja passada.
+    - name: Definir variável de ambiente de arquitetura
+      ansible.builtin.set_fact:
+        k3s_arch_env: >-
+          {{
+            'INSTALL_K3S_ARCH=arm' if k3s_node_arch == 'arm'
+            else ''
+          }}
+      tags: [k3s, install]
+
+    - name: Exibir arquitetura do nó
+      ansible.builtin.debug:
+        msg: >
+          Nó: {{ inventory_hostname }} |
+          Arquitetura: {{ k3s_node_arch | default('amd64') }} |
+          K3s instalado: {{ k3s_binary.stat.exists }}
+      tags: [k3s, install]
+
+    # -------------------------------------------------------------------------
+    # Instalar K3s agent
+    # -------------------------------------------------------------------------
+
+    - name: Instalar K3s agent
+      ansible.builtin.shell:
+        cmd: |
+          curl -sfL {{ k3s_install_script_url }} | \
+          INSTALL_K3S_VERSION="{{ k3s_version }}" \
+          K3S_URL="{{ k3s_server_url }}" \
+          K3S_TOKEN="{{ hostvars[groups['k3s_server'][0]]['k3s_join_token'] }}" \
+          {{ k3s_arch_env }} \
+          sh -s - agent {{ k3s_agent_args }}
+        executable: /bin/bash
+      register: k3s_agent_install
+      changed_when: >
+        'service k3s-agent' in k3s_agent_install.stdout or
+        'systemd' in k3s_agent_install.stdout
+      when: >
+        not k3s_binary.stat.exists or
+        k3s_version not in (k3s_installed_version.stdout | default(''))
+      tags: [k3s, install]
+
+    # -------------------------------------------------------------------------
+    # Garantir que o serviço k3s-agent está rodando
+    # -------------------------------------------------------------------------
+
+    - name: Habilitar e iniciar serviço k3s-agent
+      ansible.builtin.systemd:
+        name: k3s-agent
+        enabled: true
+        state: started
+        daemon_reload: true
+      tags: [k3s, service]
+
+    # -------------------------------------------------------------------------
+    # Aguardar o nó registrar no cluster
+    # -------------------------------------------------------------------------
+
+    - name: Aguardar nó worker ficar Ready no cluster (até 2 minutos)
+      ansible.builtin.command:
+        cmd: >
+          k3s kubectl wait node/{{ inventory_hostname }}
+          --for=condition=Ready
+          --timeout={{ k3s_agent_ready_timeout }}s
+      delegate_to: "{{ groups['k3s_server'][0] }}"
+      register: agent_node_ready
+      changed_when: false
+      retries: 3
+      delay: 15
+      until: agent_node_ready.rc == 0
+      tags: [k3s, verify]
+
+    # -------------------------------------------------------------------------
+    # Aplicar labels no nó
+    # -------------------------------------------------------------------------
+
+    - name: Aplicar label do nó no cluster
+      ansible.builtin.command:
+        cmd: >
+          k3s kubectl label node {{ inventory_hostname }}
+          {{ k3s_node_label }}
+          --overwrite
+      delegate_to: "{{ groups['k3s_server'][0] }}"
+      register: label_result
+      changed_when: "'labeled' in label_result.stdout"
+      when: k3s_node_label is defined and k3s_node_label | length > 0
+      tags: [k3s, labels]
+
+    - name: Confirmar registro do nó
+      ansible.builtin.debug:
+        msg: "Nó {{ inventory_hostname }} ({{ k3s_node_arch | default('amd64') }}) registrado no cluster K3s"
+      tags: [k3s, verify]
+
+# ---------------------------------------------------------------------------
+# Play 3: Verificar cluster completo no control-plane
+# ---------------------------------------------------------------------------
+
+- name: Verificar status final do cluster K3s
+  hosts: k3s_server
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Listar todos os nós do cluster
+      ansible.builtin.command:
+        cmd: k3s kubectl get nodes -o wide
+      register: all_nodes
+      changed_when: false
+      tags: [k3s, verify]
+
+    - name: Exibir status de todos os nós
+      ansible.builtin.debug:
+        msg: "{{ all_nodes.stdout_lines }}"
+      tags: [k3s, verify]
+
+    - name: Verificar que todos os nós estão Ready
+      ansible.builtin.command:
+        cmd: >
+          k3s kubectl get nodes
+          --no-headers
+          -o custom-columns=STATUS:.status.conditions[-1].type,READY:.status.conditions[-1].status
+      register: nodes_ready_check
+      changed_when: false
+      failed_when: "'NotReady' in nodes_ready_check.stdout"
+      tags: [k3s, verify]

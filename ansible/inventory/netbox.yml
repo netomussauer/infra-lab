@@ -1,0 +1,82 @@
+# Inventário dinâmico do laboratório via NetBox IPAM.
+#
+# O NetBox passa a ser o source of truth para IPs e metadados de hosts.
+# Este arquivo substitui (ou complementa) o hosts.yml estático para
+# workflows que precisam de dados sempre atualizados.
+#
+# Pré-requisitos:
+#   pip install pynetbox
+#   ansible-galaxy collection install netbox.netbox
+#
+# Variáveis de ambiente necessárias:
+#   NETBOX_URL   — URL base do NetBox (ex: http://192.168.1.30:8000)
+#   NETBOX_TOKEN — Token de API do NetBox (gerado em /user/api-tokens/)
+#
+# Uso:
+#   ansible-inventory -i inventory/netbox.yml --list
+#   ansible-inventory -i inventory/netbox.yml --graph
+#   ansible-playbook -i inventory/netbox.yml playbooks/01-base-setup.yml
+
+plugin: netbox.netbox.nb_inventory
+
+# URL da API do NetBox — lida da variável de ambiente ou usa o IP padrão do lab
+api_endpoint: "{{ lookup('env', 'NETBOX_URL') | default('http://192.168.1.30:8000') }}"
+
+# Token de autenticação — NUNCA coloque o valor real aqui; use variável de ambiente ou vault
+token: "{{ lookup('env', 'NETBOX_TOKEN') }}"
+
+# Aceitar certificado auto-assinado (lab sem CA válida)
+validate_certs: false
+
+# ---------------------------------------------------------------------------
+# Filtro de VMs — incluir apenas as do cluster Proxmox do lab
+# ---------------------------------------------------------------------------
+virtual_machines_filters:
+  cluster: proxmox-lab
+
+# ---------------------------------------------------------------------------
+# Agrupamento automático dos hosts por atributos do NetBox
+# ---------------------------------------------------------------------------
+# Os grupos gerados seguem a nomenclatura dos atributos:
+#   device_roles  → ex: k3s_server, k3s_worker, k3s_edge
+#   tags          → ex: lab
+#   sites         → ex: lab_home
+#   virtual_machine_cluster → ex: proxmox_lab
+group_by:
+  - device_roles
+  - tags
+  - sites
+  - virtual_machine_cluster
+
+# ---------------------------------------------------------------------------
+# Mapeamento de atributos NetBox para variáveis Ansible
+# ---------------------------------------------------------------------------
+# ansible_host: extrai apenas o endereço IP (sem prefixo /24) do primary_ip4
+# netbox_id:    ID do objeto no NetBox — útil para chamadas à API
+# netbox_site:  nome do site (ex: lab-home)
+# netbox_cluster: nome do cluster (ex: proxmox-lab) — apenas para VMs
+compose:
+  ansible_host: primary_ip4.address | ansible.utils.ipaddr('address')
+  netbox_id: id
+  netbox_site: site.name
+  netbox_cluster: cluster.name
+
+# ---------------------------------------------------------------------------
+# Filtros de query — restringem quais objetos são retornados pelo NetBox
+# ---------------------------------------------------------------------------
+
+# Dispositivos físicos: apenas os do site lab-home
+device_query_filters:
+  - site: lab-home
+
+# VMs: apenas as do site lab-home, com tag "lab" e status ativo
+virtual_machines_query_filters:
+  - site: lab-home
+  - tag: lab
+  - status: active
+
+# ---------------------------------------------------------------------------
+# Configurações de exibição dos grupos
+# ---------------------------------------------------------------------------
+# Evita prefixos automáticos como "nb_" nos nomes dos grupos gerados
+group_names_raw: true

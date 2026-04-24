@@ -1,0 +1,214 @@
+# cicd/harbor/helm-values.yaml
+# Helm values para harbor/harbor chart
+#
+# Repositório: https://helm.goharbor.io
+# Chart: harbor/harbor
+#
+# Instalar:
+#   helm repo add harbor https://helm.goharbor.io
+#   helm upgrade --install harbor harbor/harbor \
+#     -f kubernetes/cicd/harbor/helm-values.yaml \
+#     --namespace registry --create-namespace
+#
+# IP MetalLB alocado: 192.168.1.202
+# Acesso: https://harbor.lab.local ou http://192.168.1.202
+# Credenciais padrão: admin / Harbor12345 (alterar no primeiro login)
+
+externalURL: "https://harbor.lab.local"
+
+# Exposição via LoadBalancer MetalLB
+expose:
+  type: loadBalancer
+  loadBalancer:
+    IP: "192.168.1.202"
+    ports:
+      httpPort: 80
+      httpsPort: 443
+    annotations:
+      metallb.universe.tf/address-pool: "lab-pool"
+  tls:
+    # Para o lab, usamos certresolver do cert-manager ou certificado self-signed
+    enabled: true
+    certSource: auto    # auto gera self-signed; use "secret" para cert-manager
+    auto:
+      commonName: "harbor.lab.local"
+
+# Senha do admin Harbor
+harborAdminPassword: "Harbor12345!"
+
+# Chave secreta para encrypt de dados (16, 32 ou 64 chars)
+secretKey: "labsecretkey1234"
+
+# Persistência — todos os volumes via nfs-storage
+persistence:
+  enabled: true
+  resourcePolicy: "keep"
+
+  persistentVolumeClaim:
+    registry:
+      storageClass: "nfs-storage"
+      accessMode: ReadWriteOnce
+      size: "50Gi"
+    jobservice:
+      jobLog:
+        storageClass: "nfs-storage"
+        accessMode: ReadWriteOnce
+        size: "2Gi"
+    database:
+      storageClass: "nfs-storage"
+      accessMode: ReadWriteOnce
+      size: "5Gi"
+    redis:
+      storageClass: "nfs-storage"
+      accessMode: ReadWriteOnce
+      size: "2Gi"
+    trivy:
+      storageClass: "nfs-storage"
+      accessMode: ReadWriteOnce
+      size: "5Gi"
+
+# NodeSelector — roda no k3s-worker-cicd
+nodeSelector:
+  workload: "cicd"
+
+# Resources por componente
+# Perfil: ambiente de laboratório com 6GB RAM disponível no node cicd
+nginx:
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"
+  nodeSelector:
+    workload: "cicd"
+
+portal:
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"
+  nodeSelector:
+    workload: "cicd"
+
+core:
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  nodeSelector:
+    workload: "cicd"
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 60
+    periodSeconds: 10
+    failureThreshold: 3
+    successThreshold: 1
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 20
+    periodSeconds: 10
+    failureThreshold: 3
+    successThreshold: 1
+  startupProbe:
+    enabled: true
+    initialDelaySeconds: 10
+    failureThreshold: 30
+    periodSeconds: 10
+
+jobservice:
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "256Mi"
+  nodeSelector:
+    workload: "cicd"
+  jobLoggers:
+    - file
+  loggerSweeperDuration: 14    # dias
+
+registry:
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  nodeSelector:
+    workload: "cicd"
+  controller:
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+      limits:
+        cpu: "200m"
+        memory: "128Mi"
+
+trivy:
+  enabled: true
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  nodeSelector:
+    workload: "cicd"
+
+database:
+  type: internal
+  internal:
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+    nodeSelector:
+      workload: "cicd"
+
+redis:
+  type: internal
+  internal:
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+      limits:
+        cpu: "200m"
+        memory: "128Mi"
+    nodeSelector:
+      workload: "cicd"
+
+# Labels globais aplicadas a todos os recursos
+commonLabels:
+  environment: "lab"
+  lab_id: "lab-k8s-01"
+  lab_owner: "jose.mussauer"
+
+# Métricas Prometheus
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: false   # habilitar se kube-prometheus-stack já estiver instalado
+
+# Configurações de log
+logLevel: info
+
+# Update strategy
+updateStrategy:
+  type: RollingUpdate

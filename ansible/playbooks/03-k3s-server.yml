@@ -1,0 +1,205 @@
+# Playbook 03 — Instalação do K3s no nó control-plane.
+#
+# Executa em: k3s_server (192.168.1.20)
+# Idempotente: sim — verifica se k3s já está instalado antes de instalar
+#
+# O que faz:
+#   1. Instala o K3s server com configurações customizadas
+#   2. Desabilita traefik e servicelb (usaremos ingress-nginx + MetalLB)
+#   3. Aguarda o nó ficar Ready
+#   4. Recupera o token de join e salva como fact global
+#   5. Copia o kubeconfig para o host de controle (máquina local)
+#
+# IMPORTANTE: Execute este playbook ANTES do 04-k3s-agents.yml.
+# O token gerado aqui é necessário para o registro dos agents.
+#
+# Uso:
+#   ansible-playbook -i inventory/hosts.yml playbooks/03-k3s-server.yml
+#   ansible-playbook -i inventory/hosts.yml playbooks/03-k3s-server.yml --check --diff
+
+---
+- name: Instalar e configurar K3s control-plane
+  hosts: k3s_server
+  become: true
+  gather_facts: true
+
+  handlers:
+    - name: Reiniciar k3s
+      ansible.builtin.systemd:
+        name: k3s
+        state: restarted
+        daemon_reload: true
+
+  tasks:
+
+    # -------------------------------------------------------------------------
+    # Verificar estado atual
+    # -------------------------------------------------------------------------
+
+    - name: Verificar se K3s já está instalado
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s
+      register: k3s_binary
+      tags: [k3s, install]
+
+    - name: Verificar versão do K3s instalada (se existir)
+      ansible.builtin.command:
+        cmd: k3s --version
+      register: k3s_installed_version
+      changed_when: false
+      failed_when: false
+      when: k3s_binary.stat.exists
+      tags: [k3s, install]
+
+    - name: Exibir versão atual do K3s
+      ansible.builtin.debug:
+        msg: "K3s já instalado: {{ k3s_installed_version.stdout | default('não instalado') }}"
+      tags: [k3s, install]
+
+    # -------------------------------------------------------------------------
+    # Instalar K3s server
+    # -------------------------------------------------------------------------
+
+    - name: Baixar e instalar K3s server
+      ansible.builtin.shell:
+        cmd: |
+          curl -sfL {{ k3s_install_script_url }} | \
+          INSTALL_K3S_VERSION="{{ k3s_version }}" \
+          K3S_KUBECONFIG_MODE="644" \
+          sh -s - server {{ k3s_server_args }}
+        executable: /bin/bash
+      register: k3s_install_result
+      changed_when: >
+        'service k3s' in k3s_install_result.stdout or
+        'systemd' in k3s_install_result.stdout
+      when: >
+        not k3s_binary.stat.exists or
+        k3s_version not in (k3s_installed_version.stdout | default(''))
+      tags: [k3s, install]
+
+    # -------------------------------------------------------------------------
+    # Garantir que o serviço k3s está rodando
+    # -------------------------------------------------------------------------
+
+    - name: Habilitar e iniciar serviço k3s
+      ansible.builtin.systemd:
+        name: k3s
+        enabled: true
+        state: started
+        daemon_reload: true
+      tags: [k3s, service]
+
+    # -------------------------------------------------------------------------
+    # Aguardar o nó control-plane ficar Ready
+    # -------------------------------------------------------------------------
+
+    - name: Aguardar o API server do K3s responder (até 3 minutos)
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: "{{ k3s_api_port }}"
+        timeout: 180
+        delay: 5
+        msg: "K3s API server não respondeu em {{ ansible_host }}:{{ k3s_api_port }}"
+      tags: [k3s, verify]
+
+    - name: Aguardar nó control-plane ficar em status Ready
+      ansible.builtin.command:
+        cmd: >
+          k3s kubectl wait node/{{ inventory_hostname }}
+          --for=condition=Ready
+          --timeout=120s
+      register: node_ready
+      changed_when: false
+      retries: 3
+      delay: 10
+      until: node_ready.rc == 0
+      tags: [k3s, verify]
+
+    - name: Exibir status dos nós
+      ansible.builtin.command:
+        cmd: k3s kubectl get nodes -o wide
+      register: nodes_status
+      changed_when: false
+      tags: [k3s, verify]
+
+    - name: Mostrar status dos nós
+      ansible.builtin.debug:
+        msg: "{{ nodes_status.stdout_lines }}"
+      tags: [k3s, verify]
+
+    # -------------------------------------------------------------------------
+    # Recuperar token de join
+    # -------------------------------------------------------------------------
+
+    - name: Ler token de join do K3s
+      ansible.builtin.slurp:
+        src: "{{ k3s_token_path }}"
+      register: k3s_token_raw
+      tags: [k3s, token]
+
+    - name: Salvar token de join como fact global (disponível para outros plays)
+      ansible.builtin.set_fact:
+        k3s_join_token: "{{ k3s_token_raw.content | b64decode | trim }}"
+      tags: [k3s, token]
+
+    - name: Confirmar que o token foi carregado
+      ansible.builtin.debug:
+        msg: "Token K3s recuperado com sucesso ({{ k3s_join_token | length }} caracteres)"
+      tags: [k3s, token]
+
+    # -------------------------------------------------------------------------
+    # Copiar kubeconfig para o host de controle
+    # -------------------------------------------------------------------------
+
+    - name: Ler kubeconfig do K3s
+      ansible.builtin.slurp:
+        src: "{{ k3s_kubeconfig_path }}"
+      register: k3s_kubeconfig_raw
+      tags: [k3s, kubeconfig]
+
+    - name: Criar diretório .kube local (no host de controle)
+      ansible.builtin.file:
+        path: "{{ lookup('env', 'HOME') }}/.kube"
+        state: directory
+        mode: "0700"
+      delegate_to: localhost
+      become: false
+      tags: [k3s, kubeconfig]
+
+    - name: Salvar kubeconfig localmente (com IP correto do servidor)
+      ansible.builtin.copy:
+        content: >-
+          {{
+            k3s_kubeconfig_raw.content | b64decode |
+            replace('127.0.0.1', k3s_server_ip) |
+            replace('localhost', k3s_server_ip)
+          }}
+        dest: "{{ k3s_local_kubeconfig }}"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      tags: [k3s, kubeconfig]
+
+    - name: Informar localização do kubeconfig
+      ansible.builtin.debug:
+        msg: >
+          Kubeconfig salvo em {{ k3s_local_kubeconfig }}.
+          Para usar: export KUBECONFIG={{ k3s_local_kubeconfig }}
+      delegate_to: localhost
+      become: false
+      tags: [k3s, kubeconfig]
+
+# ---------------------------------------------------------------------------
+# Play secundário: compartilhar token com todos os agents
+# ---------------------------------------------------------------------------
+# Este play garante que o token está disponível como hostvars em k3s_agents.
+
+- name: Propagar token K3s para os agents
+  hosts: k3s_agents
+  gather_facts: false
+
+  tasks:
+    - name: Registrar token K3s nos facts dos agents
+      ansible.builtin.set_fact:
+        k3s_join_token: "{{ hostvars[groups['k3s_server'][0]]['k3s_join_token'] }}"
+      tags: [k3s, token]

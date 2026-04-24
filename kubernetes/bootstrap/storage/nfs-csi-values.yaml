@@ -1,0 +1,72 @@
+# bootstrap/storage/nfs-csi-values.yaml
+# Helm values para nfs-subdir-external-provisioner
+#
+# Repositório: https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner/
+# Chart: nfs-subdir-external-provisioner/nfs-subdir-external-provisioner
+#
+# Instalar:
+#   helm repo add nfs-subdir-external-provisioner \
+#     https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner/
+#   helm upgrade --install nfs-provisioner \
+#     nfs-subdir-external-provisioner/nfs-subdir-external-provisioner \
+#     -f kubernetes/bootstrap/storage/nfs-csi-values.yaml \
+#     --namespace kube-system
+
+nfs:
+  server: "192.168.1.5"
+  path: "/k8s-pv"
+  # Montar com NFSv4.1 para melhor compatibilidade e performance
+  mountOptions:
+    - nfsvers=4.1
+    - hard
+    - timeo=600
+    - retrans=2
+
+storageClass:
+  name: "nfs-storage"
+  defaultClass: true
+  reclaimPolicy: "Retain"
+  archiveOnDelete: true       # move dados para diretório archived- ao invés de deletar
+  onDelete: "retain"          # retain | delete | archive
+  pathPattern: "${.PVC.namespace}/${.PVC.name}"  # subpath: namespace/pvc-name
+  accessModes: ReadWriteMany
+  volumeBindingMode: Immediate
+  allowVolumeExpansion: true
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+
+# Provisioner roda no kube-system, sem nodeSelector específico
+# para garantir que esteja sempre disponível
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: "50m"
+    memory: "64Mi"
+  limits:
+    cpu: "200m"
+    memory: "128Mi"
+
+# Tolerations para garantir que o provisioner rode mesmo em nodes com taints
+tolerations:
+  - key: "node-role.kubernetes.io/control-plane"
+    operator: "Exists"
+    effect: "NoSchedule"
+  - key: "node-role.kubernetes.io/master"
+    operator: "Exists"
+    effect: "NoSchedule"
+
+# Preferência por rodar nos workers, mas sem obrigatoriedade
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+            - key: node-role.kubernetes.io/control-plane
+              operator: DoesNotExist
+
+labels:
+  environment: "lab"
+  lab_id: "lab-k8s-01"
+  lab_owner: "jose.mussauer"

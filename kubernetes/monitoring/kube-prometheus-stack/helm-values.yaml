@@ -1,0 +1,381 @@
+# monitoring/kube-prometheus-stack/helm-values.yaml
+# Helm values para prometheus-community/kube-prometheus-stack
+#
+# Repositório: https://prometheus-community.github.io/helm-charts
+# Chart: prometheus-community/kube-prometheus-stack
+#
+# Instalar:
+#   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+#   helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+#     -f kubernetes/monitoring/kube-prometheus-stack/helm-values.yaml \
+#     --namespace monitoring --create-namespace
+#
+# IPs alocados:
+#   Grafana: 192.168.1.210
+# Acesso: http://192.168.1.210 | admin / lab@admin
+
+# Labels globais para todos os recursos
+commonLabels:
+  environment: "lab"
+  lab_id: "lab-k8s-01"
+  lab_owner: "jose.mussauer"
+
+# ============================================================
+# GRAFANA
+# ============================================================
+grafana:
+  enabled: true
+
+  nodeSelector:
+    workload: "monitoring"
+
+  tolerations:
+    # Notebook-i5 pode ter taints de manutenção — garantir tolerância
+    - key: "node.kubernetes.io/not-ready"
+      operator: "Exists"
+      effect: "NoExecute"
+      tolerationSeconds: 300
+    - key: "node.kubernetes.io/unreachable"
+      operator: "Exists"
+      effect: "NoExecute"
+      tolerationSeconds: 300
+
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+  service:
+    type: LoadBalancer
+    loadBalancerIP: "192.168.1.210"
+    annotations:
+      metallb.universe.tf/address-pool: "lab-pool"
+    port: 80
+    targetPort: 3000
+
+  persistence:
+    enabled: true
+    storageClassName: "nfs-storage"
+    accessModes:
+      - ReadWriteOnce
+    size: "5Gi"
+
+  # Senha do admin — alterar após primeiro acesso
+  adminUser: "admin"
+  adminPassword: "lab@admin"
+
+  # Datasource Loki pré-configurado
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      url: "http://loki.monitoring.svc.cluster.local:3100"
+      access: proxy
+      isDefault: false
+      jsonData:
+        maxLines: 1000
+
+  # Habilitar sidecar para carregar dashboards de ConfigMaps automaticamente
+  sidecar:
+    dashboards:
+      enabled: true
+      label: "grafana_dashboard"
+      labelValue: "1"
+      searchNamespace: "ALL"
+      folderAnnotation: "grafana_folder"
+      provider:
+        foldersFromFilesStructure: true
+    datasources:
+      enabled: true
+      label: "grafana_datasource"
+      labelValue: "1"
+      searchNamespace: "ALL"
+
+  grafana.ini:
+    server:
+      domain: "grafana.lab.local"
+      root_url: "http://grafana.lab.local"
+    analytics:
+      reporting_enabled: false
+      check_for_updates: false
+    log:
+      level: "info"
+    paths:
+      data: "/var/lib/grafana/"
+      logs: "/var/log/grafana"
+      plugins: "/var/lib/grafana/plugins"
+
+  # Probes
+  livenessProbe:
+    httpGet:
+      path: /api/health
+      port: 3000
+    initialDelaySeconds: 60
+    periodSeconds: 15
+    failureThreshold: 3
+    successThreshold: 1
+    timeoutSeconds: 5
+
+  readinessProbe:
+    httpGet:
+      path: /api/health
+      port: 3000
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    failureThreshold: 3
+    successThreshold: 1
+    timeoutSeconds: 5
+
+  podLabels:
+    app.kubernetes.io/name: "grafana"
+    app.kubernetes.io/component: "visualization"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+
+# ============================================================
+# PROMETHEUS
+# ============================================================
+prometheus:
+  enabled: true
+
+  prometheusSpec:
+    nodeSelector:
+      workload: "monitoring"
+
+    tolerations:
+      - key: "node.kubernetes.io/not-ready"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 300
+      - key: "node.kubernetes.io/unreachable"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 300
+
+    replicas: 1
+
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+      limits:
+        cpu: "1000m"
+        memory: "2Gi"
+
+    # Retenção de dados
+    retention: "15d"
+    retentionSize: "18GB"  # deixa margem antes dos 20GB do PVC
+
+    # Storage persistente via NFS
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: "nfs-storage"
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: "20Gi"
+
+    # Coleta de métricas de todos os namespaces
+    serviceMonitorNamespaceSelector: {}
+    serviceMonitorSelector: {}
+    podMonitorNamespaceSelector: {}
+    podMonitorSelector: {}
+    ruleNamespaceSelector: {}
+
+    # Scrape interval padrão
+    scrapeInterval: "30s"
+    evaluationInterval: "30s"
+
+    # Configurações adicionais de scrape (nós K3s, NFS, etc.)
+    additionalScrapeConfigs:
+      - job_name: "k3s-server"
+        static_configs:
+          - targets: ["192.168.1.20:10250"]
+        scheme: https
+        tls_config:
+          insecure_skip_verify: true
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+
+      - job_name: "nfs-server"
+        static_configs:
+          - targets: ["192.168.1.5:9100"]
+        # Assumindo node_exporter instalado no NAS (Synology/TrueNAS)
+
+    podAnnotations:
+      prometheus.io/scrape: "true"
+
+  service:
+    type: ClusterIP
+    port: 9090
+
+# ============================================================
+# ALERTMANAGER
+# ============================================================
+alertmanager:
+  enabled: true
+
+  alertmanagerSpec:
+    nodeSelector:
+      workload: "monitoring"
+
+    tolerations:
+      - key: "node.kubernetes.io/not-ready"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 300
+
+    replicas: 1
+
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+      limits:
+        cpu: "200m"
+        memory: "128Mi"
+
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: "nfs-storage"
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: "2Gi"
+
+    # Configuração básica do AlertManager para o lab
+    # Ajustar para envio real de notificações se necessário
+  config:
+    global:
+      resolve_timeout: "5m"
+    route:
+      group_by: ["job", "alertname", "namespace"]
+      group_wait: "30s"
+      group_interval: "5m"
+      repeat_interval: "12h"
+      receiver: "null"
+    receivers:
+      - name: "null"
+    inhibit_rules:
+      - source_matchers:
+          - severity = "critical"
+        target_matchers:
+          - severity = "warning"
+        equal: ["alertname", "namespace", "service"]
+
+# ============================================================
+# NODE EXPORTER
+# Deve rodar em TODOS os nós, incluindo RPi ARM e control-plane
+# ============================================================
+nodeExporter:
+  enabled: true
+
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"
+
+  # Tolerations para rodar em ABSOLUTAMENTE TODOS os nós
+  tolerations:
+    # Control-plane K3s (tainted NoSchedule)
+    - key: "node-role.kubernetes.io/control-plane"
+      operator: "Exists"
+      effect: "NoSchedule"
+    - key: "node-role.kubernetes.io/master"
+      operator: "Exists"
+      effect: "NoSchedule"
+    # Nodes não prontos
+    - key: "node.kubernetes.io/not-ready"
+      operator: "Exists"
+      effect: "NoExecute"
+    - key: "node.kubernetes.io/unreachable"
+      operator: "Exists"
+      effect: "NoExecute"
+    - key: "node.kubernetes.io/disk-pressure"
+      operator: "Exists"
+      effect: "NoSchedule"
+    - key: "node.kubernetes.io/memory-pressure"
+      operator: "Exists"
+      effect: "NoSchedule"
+    # RPi ARM — caso tenha taint de arquitetura
+    - key: "arch"
+      operator: "Exists"
+      effect: "NoSchedule"
+
+  # Coletar métricas de filesystem, rede, CPU e memória
+  extraArgs:
+    - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+|var/lib/kubelet/.+)($|/)
+    - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$
+
+  podLabels:
+    app.kubernetes.io/name: "node-exporter"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+
+# ============================================================
+# KUBE-STATE-METRICS
+# ============================================================
+kube-state-metrics:
+  nodeSelector:
+    workload: "monitoring"
+
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"
+
+# ============================================================
+# PROMETHEUS OPERATOR
+# ============================================================
+prometheusOperator:
+  nodeSelector:
+    workload: "monitoring"
+
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "256Mi"
+
+  tolerations:
+    - key: "node.kubernetes.io/not-ready"
+      operator: "Exists"
+      effect: "NoExecute"
+      tolerationSeconds: 300
+
+# ============================================================
+# COMPONENTES DESABILITADOS NO LAB (sem acesso ao cloud provider)
+# ============================================================
+kubeEtcd:
+  enabled: false   # K3s usa SQLite/etcd embarcado, não exposto por padrão
+
+kubeControllerManager:
+  enabled: false   # K3s: endpoint não exposto por padrão
+
+kubeScheduler:
+  enabled: false   # K3s: endpoint não exposto por padrão
+
+kubeProxy:
+  enabled: false   # K3s: usa kube-proxy ou eBPF via Cilium
+
+# CoreDNS métricas (K3s inclui CoreDNS)
+coreDns:
+  enabled: true

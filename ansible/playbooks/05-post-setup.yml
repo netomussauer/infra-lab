@@ -1,0 +1,192 @@
+# Playbook 05 — Configuração pós-instalação do cluster K3s.
+#
+# Executa em: k3s_server (age no cluster via kubectl)
+# Idempotente: sim — labels e taints usam --overwrite; comandos verificam estado atual
+#
+# O que faz:
+#   1. Aplica taint NoSchedule no control-plane
+#   2. Aplica labels de workload em cada nó conforme papel no cluster
+#   3. Exibe status final completo do cluster
+#   4. Verifica que todos os nós estão Ready
+#
+# Topologia de labels/taints:
+#   k3s-server      — taint control-plane:NoSchedule + label workload=control-plane
+#   k3s-worker-cicd — label workload=cicd
+#   ci-runner       — label workload=runner
+#   notebook-i5     — label workload=monitoring
+#   raspberry-pi    — label workload=edge (definido no inventário)
+#
+# Uso:
+#   ansible-playbook -i inventory/hosts.yml playbooks/05-post-setup.yml
+#   ansible-playbook -i inventory/hosts.yml playbooks/05-post-setup.yml --check --diff
+
+---
+- name: Configurações pós-instalação do cluster K3s
+  hosts: k3s_server
+  become: true
+  gather_facts: false
+
+  vars:
+    # Definição centralizada de labels por nó
+    node_labels:
+      k3s-server:
+        - "workload=control-plane"
+        - "node-role=server"
+      k3s-worker-cicd:
+        - "workload=cicd"
+        - "node-role=worker"
+      ci-runner:
+        - "workload=runner"
+        - "node-role=worker"
+      notebook-i5:
+        - "workload=monitoring"
+        - "node-role=worker"
+        - "hardware=bare-metal"
+      raspberry-pi:
+        - "workload=edge"
+        - "node-role=worker"
+        - "hardware=bare-metal"
+        - "arch=arm"
+
+    # Taints do control-plane
+    control_plane_taints:
+      - "node-role.kubernetes.io/control-plane:NoSchedule"
+
+  tasks:
+
+    # -------------------------------------------------------------------------
+    # Verificar que o cluster está operacional
+    # -------------------------------------------------------------------------
+
+    - name: Verificar que o API server K3s está respondendo
+      ansible.builtin.command:
+        cmd: k3s kubectl cluster-info
+      register: cluster_info
+      changed_when: false
+      retries: 3
+      delay: 10
+      until: cluster_info.rc == 0
+      tags: [k3s, verify]
+
+    - name: Listar nós atuais do cluster
+      ansible.builtin.command:
+        cmd: k3s kubectl get nodes --no-headers -o custom-columns=NAME:.metadata.name
+      register: current_nodes
+      changed_when: false
+      tags: [k3s, verify]
+
+    - name: Exibir nós presentes no cluster
+      ansible.builtin.debug:
+        msg: "Nós no cluster: {{ current_nodes.stdout_lines }}"
+      tags: [k3s, verify]
+
+    # -------------------------------------------------------------------------
+    # Aplicar taint no control-plane
+    # -------------------------------------------------------------------------
+
+    - name: Aplicar taint NoSchedule no control-plane
+      ansible.builtin.command:
+        cmd: >
+          k3s kubectl taint node {{ inventory_hostname }}
+          {{ item }}
+          --overwrite
+      loop: "{{ control_plane_taints }}"
+      register: taint_result
+      changed_when: "'tainted' in taint_result.stdout"
+      tags: [k3s, taints]
+
+    - name: Confirmar taint no control-plane
+      ansible.builtin.debug:
+        msg: >
+          Taint aplicado: {{ item }} em {{ inventory_hostname }}
+      loop: "{{ control_plane_taints }}"
+      tags: [k3s, taints]
+
+    # -------------------------------------------------------------------------
+    # Aplicar labels nos nós
+    # -------------------------------------------------------------------------
+
+    - name: Aplicar labels nos nós do cluster
+      ansible.builtin.command:
+        cmd: >
+          k3s kubectl label node {{ item.key }}
+          {{ item.value | join(' ') }}
+          --overwrite
+      loop: "{{ node_labels | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      register: label_results
+      changed_when: "'labeled' in label_results.stdout"
+      # Não falhar se o nó ainda não entrou no cluster (bare metal pode demorar)
+      failed_when: >
+        label_results.rc != 0 and
+        'not found' not in label_results.stderr
+      tags: [k3s, labels]
+
+    - name: Verificar labels aplicados no control-plane
+      ansible.builtin.command:
+        cmd: >
+          k3s kubectl get node {{ inventory_hostname }}
+          --show-labels
+          -o custom-columns=NAME:.metadata.name,LABELS:.metadata.labels
+      register: server_labels
+      changed_when: false
+      tags: [k3s, labels, verify]
+
+    # -------------------------------------------------------------------------
+    # Verificar status final do cluster
+    # -------------------------------------------------------------------------
+
+    - name: Listar todos os nós com detalhes
+      ansible.builtin.command:
+        cmd: k3s kubectl get nodes -o wide
+      register: final_nodes
+      changed_when: false
+      tags: [k3s, verify]
+
+    - name: Exibir status final de todos os nós
+      ansible.builtin.debug:
+        msg: "{{ final_nodes.stdout_lines }}"
+      tags: [k3s, verify]
+
+    - name: Verificar sistema de pods do cluster (kube-system)
+      ansible.builtin.command:
+        cmd: k3s kubectl get pods -n kube-system -o wide
+      register: system_pods
+      changed_when: false
+      tags: [k3s, verify]
+
+    - name: Exibir pods do kube-system
+      ansible.builtin.debug:
+        msg: "{{ system_pods.stdout_lines }}"
+      tags: [k3s, verify]
+
+    - name: Verificar que não há nós em estado NotReady
+      ansible.builtin.command:
+        cmd: >
+          k3s kubectl get nodes
+          --no-headers
+          -o custom-columns=NAME:.metadata.name,STATUS:.status.conditions[-1].type
+      register: nodes_final_status
+      changed_when: false
+      failed_when: "'NotReady' in nodes_final_status.stdout"
+      tags: [k3s, verify]
+
+    - name: Cluster K3s configurado com sucesso
+      ansible.builtin.debug:
+        msg: |
+          ============================================================
+          Cluster K3s do home-lab configurado com sucesso!
+
+          Para usar o cluster:
+            export KUBECONFIG={{ k3s_local_kubeconfig }}
+            kubectl get nodes
+
+          Sumário de nós e papéis:
+          - k3s-server      (192.168.1.20) — control-plane [NoSchedule]
+          - k3s-worker-cicd (192.168.1.21) — worker cicd
+          - ci-runner       (192.168.1.22) — worker runner
+          - notebook-i5     (192.168.1.11) — worker monitoring
+          - raspberry-pi    (192.168.1.12) — worker edge (arm)
+          ============================================================
+      tags: [k3s, verify]

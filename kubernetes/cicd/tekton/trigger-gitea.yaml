@@ -1,0 +1,355 @@
+# cicd/tekton/trigger-gitea.yaml
+# Tekton Triggers para webhook do Gitea
+#
+# Pré-requisitos:
+#   kubectl apply --filename https://storage.googleapis.com/tekton-releases/triggers/latest/release.yaml
+#   kubectl apply --filename https://storage.googleapis.com/tekton-releases/triggers/latest/interceptors.yaml
+#
+# Após aplicar, configurar webhook no Gitea:
+#   URL: http://192.168.1.204/hooks/gitea-push
+#   Content-Type: application/json
+#   Secret: <valor de gitea-webhook-secret>
+#   Events: Push
+#
+# Secret do webhook (gerar antes de aplicar):
+#   kubectl create secret generic gitea-webhook-secret \
+#     --from-literal=secretToken=<token-aleatorio> \
+#     --namespace=cicd
+#
+# IP MetalLB alocado: 192.168.1.204
+
+---
+# ServiceAccount com permissões para criar PipelineRuns
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tekton-triggers-sa
+  namespace: cicd
+  labels:
+    app.kubernetes.io/name: "tekton-triggers-sa"
+    app.kubernetes.io/component: "tekton-triggers"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tekton-triggers-role
+  namespace: cicd
+  labels:
+    app.kubernetes.io/name: "tekton-triggers-role"
+    app.kubernetes.io/component: "tekton-triggers"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+rules:
+  # Criar e gerenciar PipelineRuns e TaskRuns
+  - apiGroups: ["tekton.dev"]
+    resources: ["pipelineruns", "taskruns"]
+    verbs: ["create", "get", "list", "watch", "patch", "update"]
+  # Ler EventListeners e Triggers
+  - apiGroups: ["triggers.tekton.dev"]
+    resources: ["eventlisteners", "triggerbindings", "triggertemplates", "triggers", "clusterinterceptors"]
+    verbs: ["get", "list", "watch"]
+  # Criar e ler ConfigMaps (para estado do trigger)
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tekton-triggers-rolebinding
+  namespace: cicd
+  labels:
+    app.kubernetes.io/name: "tekton-triggers-rolebinding"
+    app.kubernetes.io/component: "tekton-triggers"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+subjects:
+  - kind: ServiceAccount
+    name: tekton-triggers-sa
+    namespace: cicd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tekton-triggers-role
+
+---
+# ClusterRoleBinding necessário para o EventListener acessar recursos do cluster
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tekton-triggers-cicd-clusterrole
+  labels:
+    app.kubernetes.io/name: "tekton-triggers-clusterrole"
+    app.kubernetes.io/component: "tekton-triggers"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+subjects:
+  - kind: ServiceAccount
+    name: tekton-triggers-sa
+    namespace: cicd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: tekton-triggers-eventlistener-roles
+
+---
+# TriggerBinding: extrai parâmetros do payload JSON do webhook Gitea
+# Gitea push event payload reference:
+# https://gitea.io/api/1.1/#tag/issue/operation/issueGetMilestone
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: gitea-push-binding
+  namespace: cicd
+  labels:
+    app.kubernetes.io/name: "gitea-push-binding"
+    app.kubernetes.io/component: "tekton-triggers"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+spec:
+  params:
+    # URL do repositório que recebeu o push
+    - name: source-repo-url
+      value: "$(body.repository.clone_url)"
+    # Branch que recebeu o push (ex: refs/heads/main → main)
+    - name: source-revision
+      value: "$(body.ref)"
+    # SHA do commit mais recente
+    - name: image-tag
+      value: "$(body.after)"
+    # Nome do repositório (ex: lab/hello-lab)
+    - name: repo-full-name
+      value: "$(body.repository.full_name)"
+    # Nome apenas do repositório (sem owner)
+    - name: repo-name
+      value: "$(body.repository.name)"
+    # Email do pusher
+    - name: pusher-email
+      value: "$(body.pusher.email)"
+
+---
+# TriggerTemplate: define como criar o PipelineRun a partir dos parâmetros
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: gitea-push-template
+  namespace: cicd
+  labels:
+    app.kubernetes.io/name: "gitea-push-template"
+    app.kubernetes.io/component: "tekton-triggers"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+spec:
+  params:
+    - name: source-repo-url
+      description: "URL do repositório de código-fonte"
+    - name: source-revision
+      description: "Branch/commit ref"
+    - name: image-tag
+      description: "Tag/SHA da imagem"
+    - name: repo-name
+      description: "Nome do repositório"
+    - name: repo-full-name
+      description: "Nome completo (owner/repo)"
+    - name: pusher-email
+      description: "Email de quem fez o push"
+      default: "tekton@lab.local"
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1
+      kind: PipelineRun
+      metadata:
+        generateName: "$(tt.params.repo-name)-build-"
+        namespace: cicd
+        labels:
+          app.kubernetes.io/name: "$(tt.params.repo-name)"
+          app.kubernetes.io/component: "tekton-pipelinerun"
+          app.kubernetes.io/managed-by: "tekton-triggers"
+          tekton.dev/pipeline: "build-and-push"
+          environment: "lab"
+          lab_id: "lab-k8s-01"
+          lab_owner: "jose.mussauer"
+        annotations:
+          tekton.dev/source-repo: "$(tt.params.repo-full-name)"
+          tekton.dev/triggered-by: "gitea-webhook"
+      spec:
+        pipelineRef:
+          name: build-and-push
+        params:
+          - name: source-repo-url
+            value: "$(tt.params.source-repo-url)"
+          - name: source-revision
+            value: "$(tt.params.source-revision)"
+          - name: image-name
+            value: "harbor.lab.local/lab/$(tt.params.repo-name)"
+          - name: image-tag
+            # Usar os 8 primeiros chars do SHA como tag
+            value: "$(tt.params.image-tag)"
+          - name: dockerfile
+            value: "Dockerfile"
+          - name: manifest-repo-url
+            value: "http://gitea.lab.local/lab/infra-lab.git"
+          - name: manifest-path
+            value: "kubernetes/apps/$(tt.params.repo-name)/deployment.yaml"
+        workspaces:
+          - name: source
+            volumeClaimTemplate:
+              spec:
+                storageClassName: "nfs-storage"
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: "1Gi"
+          - name: manifest-repo
+            volumeClaimTemplate:
+              spec:
+                storageClassName: "nfs-storage"
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: "500Mi"
+          - name: docker-credentials
+            secret:
+              secretName: "harbor-registry-secret"
+          - name: git-credentials
+            secret:
+              secretName: "gitea-auth-secret"
+        timeouts:
+          pipeline: "1h"
+          tasks: "45m"
+        taskRunTemplate:
+          podTemplate:
+            nodeSelector:
+              workload: "cicd"
+
+---
+# Trigger: associa o EventListener à binding e ao template
+apiVersion: triggers.tekton.dev/v1beta1
+kind: Trigger
+metadata:
+  name: gitea-push-trigger
+  namespace: cicd
+  labels:
+    app.kubernetes.io/name: "gitea-push-trigger"
+    app.kubernetes.io/component: "tekton-triggers"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+spec:
+  serviceAccountName: tekton-triggers-sa
+  interceptors:
+    # Validar HMAC do webhook Gitea
+    - ref:
+        name: "cel"
+        kind: ClusterInterceptor
+      params:
+        - name: "filter"
+          # Processar apenas push events (não tags, issues, etc.)
+          value: "header.match('X-Gitea-Event', 'push')"
+        - name: "overlays"
+          value:
+            # Extrair apenas o nome da branch (sem refs/heads/)
+            - key: branch_name
+              expression: "body.ref.split('/')[2]"
+    # Validar secret HMAC do webhook
+    - ref:
+        name: "gitea"
+        kind: ClusterInterceptor
+      params:
+        - name: secretRef
+          value:
+            secretName: "gitea-webhook-secret"
+            secretKey: "secretToken"
+        - name: eventTypes
+          value: ["push"]
+  bindings:
+    - ref: gitea-push-binding
+  template:
+    ref: gitea-push-template
+
+---
+# EventListener: recebe webhooks HTTP do Gitea
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: gitea-event-listener
+  namespace: cicd
+  labels:
+    app.kubernetes.io/name: "gitea-event-listener"
+    app.kubernetes.io/component: "tekton-triggers"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+spec:
+  serviceAccountName: tekton-triggers-sa
+  triggers:
+    - triggerRef: gitea-push-trigger
+  resources:
+    kubernetesResource:
+      replicas: 1
+      spec:
+        template:
+          metadata:
+            labels:
+              app.kubernetes.io/name: "gitea-event-listener"
+              environment: "lab"
+              lab_id: "lab-k8s-01"
+              lab_owner: "jose.mussauer"
+          spec:
+            nodeSelector:
+              workload: "cicd"
+            containers:
+              - name: event-listener
+                resources:
+                  requests:
+                    cpu: "50m"
+                    memory: "64Mi"
+                  limits:
+                    cpu: "200m"
+                    memory: "128Mi"
+
+---
+# Service LoadBalancer para expor o EventListener via MetalLB
+# O EventListener cria um Service automáticamente, mas precisamos de LoadBalancer
+# Aplicar após o EventListener estar Running para substituir o ClusterIP padrão
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitea-event-listener-lb
+  namespace: cicd
+  labels:
+    app.kubernetes.io/name: "gitea-event-listener-lb"
+    app.kubernetes.io/component: "tekton-triggers"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+  annotations:
+    metallb.universe.tf/address-pool: "lab-pool"
+spec:
+  type: LoadBalancer
+  loadBalancerIP: "192.168.1.204"
+  selector:
+    app.kubernetes.io/managed-by: "EventListener"
+    eventlistener: "gitea-event-listener"
+  ports:
+    - name: http-listener
+      port: 80
+      targetPort: 8080
+      protocol: TCP

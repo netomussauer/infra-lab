@@ -1,0 +1,68 @@
+# cicd/argocd/app-of-apps.yaml
+# ArgoCD Application — padrão App of Apps
+# Esta Application aponta para kubernetes/apps/ no repositório infra-lab
+# e gerencia todas as aplicações do laboratório via GitOps.
+#
+# Pré-requisito: ArgoCD instalado e rodando no namespace cicd
+# Aplicar: kubectl apply -f kubernetes/cicd/argocd/app-of-apps.yaml
+#
+# Pós-apply: acompanhar sync em http://192.168.1.203
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-of-apps
+  namespace: cicd
+  labels:
+    app.kubernetes.io/name: "app-of-apps"
+    app.kubernetes.io/component: "argocd-root-app"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+  annotations:
+    # Finalizer garante que ArgoCD delete recursos filhos antes de deletar a Application
+    argocd.argoproj.io/sync-wave: "-1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: "http://gitea.lab.local/lab/infra-lab.git"
+    targetRevision: HEAD
+    path: "kubernetes/apps"
+    # Kustomize ou diretório — ArgoCD auto-detecta
+    directory:
+      recurse: true
+      exclude: "*.md"
+
+  destination:
+    server: "https://kubernetes.default.svc"
+    namespace: cicd
+
+  syncPolicy:
+    automated:
+      prune: true       # remove recursos que não existem mais no git
+      selfHeal: true    # reconcilia drifts automáticamente
+      allowEmpty: false # não faz prune se o diretório estiver vazio
+
+    syncOptions:
+      - CreateNamespace=true    # cria namespace se não existir
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true          # prune apenas após sync bem-sucedido
+      - ApplyOutOfSyncOnly=true # aplica apenas o que está fora de sync
+
+    retry:
+      limit: 5
+      backoff:
+        duration: "5s"
+        factor: 2
+        maxDuration: "3m"
+
+  # Ignorar diffs de campos gerenciados pelo cluster (HPA, etc.)
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas

@@ -1,0 +1,113 @@
+# Variáveis globais aplicadas a todos os hosts do inventário.
+# Estas variáveis têm a menor precedência — podem ser sobrescritas por
+# group_vars específicos ou host_vars.
+#
+# Credenciais sensíveis (senhas, tokens) NUNCA devem ser adicionadas aqui
+# em texto plano. Use ansible-vault encrypt_string para valores sensíveis.
+
+# ---------------------------------------------------------------------------
+# Conexão SSH
+# ---------------------------------------------------------------------------
+ansible_user:                labadmin
+ansible_ssh_private_key_file: ~/.ssh/lab_id_rsa
+ansible_ssh_common_args:     "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+
+# ---------------------------------------------------------------------------
+# Rastreabilidade do laboratório (equivalente às tags do Terraform)
+# ---------------------------------------------------------------------------
+lab_id:          "lab-k3s-homelab-01"
+lab_owner:       "jose.mussauer"
+lab_environment: "dev"    # "environment" é palavra reservada no schema Ansible — usar lab_environment
+managed_by:      "ansible"
+project:         "infra-lab"
+
+# ---------------------------------------------------------------------------
+# NFS / NAS (192.168.1.5)
+# ---------------------------------------------------------------------------
+nfs_server:        "192.168.1.5"
+nfs_k8s_pv_path:   "/k8s-pv"
+nfs_backups_path:  "/backups"
+nfs_registry_path: "/registry"
+
+# Opções de montagem NFS — nfsvers=4, hard (retry infinito), intr (interrompível),
+# _netdev (aguarda rede antes de montar no boot)
+nfs_mount_options: "nfsvers=4,hard,intr,_netdev,rsize=131072,wsize=131072"
+
+# ---------------------------------------------------------------------------
+# K3s
+# ---------------------------------------------------------------------------
+k3s_version:      "v1.29.3+k3s1"
+k3s_server_ip:    "192.168.1.20"
+k3s_api_port:     6443
+
+# CIDRs internos do cluster — não devem colidir com a rede do laboratório
+k3s_cluster_cidr: "10.42.0.0/16"
+k3s_service_cidr: "10.43.0.0/16"
+
+# URL base para download do binário k3s
+k3s_install_script_url: "https://get.k3s.io"
+
+# ---------------------------------------------------------------------------
+# MetalLB — LoadBalancer bare-metal
+# ---------------------------------------------------------------------------
+# Faixa de IPs reservada para serviços do tipo LoadBalancer no cluster.
+# Estes IPs NÃO devem estar no pool DHCP do roteador.
+metallb_ip_range: "192.168.1.200-192.168.1.220"
+
+# ---------------------------------------------------------------------------
+# Sistema
+# ---------------------------------------------------------------------------
+system_timezone: "America/Sao_Paulo"
+
+# Pacotes a instalar em todos os nós
+base_packages:
+  - curl
+  - wget
+  - git
+  - htop
+  - vim
+  - nfs-common
+  - open-iscsi
+  - jq
+  - bash-completion
+  - net-tools
+  - tcpdump
+
+# ---------------------------------------------------------------------------
+# Configurações de kernel necessárias para Kubernetes
+# ---------------------------------------------------------------------------
+sysctl_k8s_settings:
+  - key: net.ipv4.ip_forward
+    value: "1"
+  - key: net.bridge.bridge-nf-call-iptables
+    value: "1"
+  - key: net.bridge.bridge-nf-call-ip6tables
+    value: "1"
+  - key: fs.inotify.max_user_watches
+    value: "524288"
+  - key: fs.inotify.max_user_instances
+    value: "512"
+  - key: vm.overcommit_memory
+    value: "1"
+  - key: kernel.panic
+    value: "10"
+  - key: kernel.panic_on_oops
+    value: "1"
+
+kernel_modules_k8s:
+  - br_netfilter
+  - overlay
+  - ip_conntrack
+
+# ---------------------------------------------------------------------------
+# NetBox IPAM
+# ---------------------------------------------------------------------------
+# URL e token do NetBox — usados pelo inventário dinâmico (inventory/netbox.yml)
+# e pelo playbook 00-netbox-register.yml.
+#
+# Preferência de configuração (do mais seguro ao menos seguro):
+#   1. Variáveis de ambiente: NETBOX_URL e NETBOX_TOKEN
+#   2. ansible-vault encrypt_string para o token
+#   3. Este arquivo (apenas para URL, NUNCA para o token em texto plano)
+netbox_url:   "{{ lookup('env', 'NETBOX_URL') | default('http://192.168.1.30:8000') }}"
+netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') }}"

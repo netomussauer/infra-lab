@@ -1,0 +1,51 @@
+# bootstrap/metallb/ipaddresspool.yaml
+# Pool de IPs do MetalLB e Advertisement L2
+# Pré-requisito: MetalLB já instalado e pods Running
+# Aplicar: kubectl apply -f kubernetes/bootstrap/metallb/ipaddresspool.yaml
+#
+# Mapa de IPs alocados neste laboratório:
+#   192.168.1.200 — reservado (não alocado)
+#   192.168.1.201 — Gitea
+#   192.168.1.202 — Harbor
+#   192.168.1.203 — ArgoCD
+#   192.168.1.204 — Tekton EventListener
+#   192.168.1.205-209 — reservado para expansão CI/CD
+#   192.168.1.210 — Grafana
+#   192.168.1.211-219 — reservado para expansão monitoring/apps
+#   192.168.1.220 — reservado
+---
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: lab-pool
+  namespace: metallb-system
+  labels:
+    app.kubernetes.io/name: "metallb"
+    app.kubernetes.io/component: "ip-pool"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+spec:
+  addresses:
+    - 192.168.1.200-192.168.1.220
+  # autoAssign permite que Services sem IP explícito recebam um do pool
+  autoAssign: true
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: lab-l2
+  namespace: metallb-system
+  labels:
+    app.kubernetes.io/name: "metallb"
+    app.kubernetes.io/component: "advertisement"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+spec:
+  ipAddressPools:
+    - lab-pool
+  # Sem nodeSelectors: todos os nós podem anunciar (exceto control-plane tainted)
+  # Para restringir o speaker a nós específicos, use nodeSelectors aqui

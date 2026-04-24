@@ -1,0 +1,293 @@
+---
+# Playbook: Registrar hosts físicos do lab no NetBox IPAM
+#
+# Registra no NetBox os equipamentos bare-metal que o Terraform não gerencia
+# diretamente: notebook-i5 (worker monitoring), raspberry-pi (worker edge) e NAS.
+# Os objetos VirtualMachine das VMs Proxmox são criados pelo próprio Terraform
+# (terraform/proxmox/netbox.tf), portanto não são duplicados aqui.
+#
+# Execução: roda na máquina de controle (localhost) via connection: local,
+# chamando a API REST do NetBox sem necessidade de SSH nos hosts alvo.
+#
+# Pré-requisitos:
+#   pip install pynetbox
+#   ansible-galaxy collection install netbox.netbox
+#   # ou usando o arquivo de requirements:
+#   # ansible-galaxy collection install -r ansible/requirements.yml
+#
+# Variáveis de ambiente (preferencial para evitar credenciais em disco):
+#   export NETBOX_URL="http://192.168.1.30:8000"
+#   export NETBOX_TOKEN="seu-token-aqui"
+#
+# Uso:
+#   ansible-playbook playbooks/00-netbox-register.yml
+#   ansible-playbook playbooks/00-netbox-register.yml --check --diff
+#
+# Idempotência: todos os tasks usam state: present — re-executar é seguro.
+
+- name: Registrar hosts físicos do lab no NetBox IPAM
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    # URL base do NetBox — lida da variável de ambiente ou usa o IP padrão do lab
+    netbox_url: "{{ lookup('env', 'NETBOX_URL') | default('http://192.168.1.30:8000') }}"
+    # Token de API — NUNCA comite o valor real; use variável de ambiente ou ansible-vault
+    netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') }}"
+    # Parâmetros compartilhados para todos os módulos netbox
+    _netbox_common: &netbox_common
+      netbox_url:    "{{ netbox_url }}"
+      netbox_token:  "{{ netbox_token }}"
+      validate_certs: false
+
+  tasks:
+
+    # -------------------------------------------------------------------------
+    # Site — garantir que lab-home existe antes de qualquer device
+    # -------------------------------------------------------------------------
+
+    - name: Garantir site lab-home no NetBox
+      netbox.netbox.netbox_site:
+        <<: *netbox_common
+        data:
+          name: lab-home
+          status: active
+        state: present
+      tags: [netbox, site]
+
+    # -------------------------------------------------------------------------
+    # Tenant — garantir que o tenant "lab" existe
+    # -------------------------------------------------------------------------
+
+    - name: Garantir tenant lab no NetBox
+      netbox.netbox.netbox_tenant:
+        <<: *netbox_common
+        data:
+          name: lab
+        state: present
+      tags: [netbox, tenant]
+
+    # -------------------------------------------------------------------------
+    # Manufacturers — necessários antes de criar device_types
+    # -------------------------------------------------------------------------
+
+    - name: Garantir manufacturer Intel no NetBox
+      netbox.netbox.netbox_manufacturer:
+        <<: *netbox_common
+        data:
+          name: Intel
+        state: present
+      tags: [netbox, manufacturer]
+
+    - name: Garantir manufacturer Raspberry Pi Foundation no NetBox
+      netbox.netbox.netbox_manufacturer:
+        <<: *netbox_common
+        data:
+          name: Raspberry Pi Foundation
+        state: present
+      tags: [netbox, manufacturer]
+
+    - name: Garantir manufacturer Generic no NetBox
+      netbox.netbox.netbox_manufacturer:
+        <<: *netbox_common
+        data:
+          name: Generic
+        state: present
+      tags: [netbox, manufacturer]
+
+    # -------------------------------------------------------------------------
+    # Device Types — modelos de hardware dos equipamentos físicos
+    # -------------------------------------------------------------------------
+
+    - name: Garantir device type Intel i5-2450M no NetBox
+      netbox.netbox.netbox_device_type:
+        <<: *netbox_common
+        data:
+          model:        "Intel i5-2450M"
+          manufacturer: Intel
+          slug:         "intel-i5-2450m"
+        state: present
+      tags: [netbox, device_type]
+
+    - name: Garantir device type Raspberry Pi ARMv7 no NetBox
+      netbox.netbox.netbox_device_type:
+        <<: *netbox_common
+        data:
+          model:        "Raspberry Pi ARMv7"
+          manufacturer: Raspberry Pi Foundation
+          slug:         "raspberry-pi-armv7"
+        state: present
+      tags: [netbox, device_type]
+
+    - name: Garantir device type NAS Generic no NetBox
+      netbox.netbox.netbox_device_type:
+        <<: *netbox_common
+        data:
+          model:        "NAS Storage"
+          manufacturer: Generic
+          slug:         "nas-storage"
+        state: present
+      tags: [netbox, device_type]
+
+    # -------------------------------------------------------------------------
+    # Device Roles — funções dos equipamentos no cluster
+    # -------------------------------------------------------------------------
+
+    - name: Garantir device role k8s-worker no NetBox
+      netbox.netbox.netbox_device_role:
+        <<: *netbox_common
+        data:
+          name:  k8s-worker
+          color: "4caf50"  # Verde — workers de carga geral
+          vm_role: true
+        state: present
+      tags: [netbox, device_role]
+
+    - name: Garantir device role k8s-edge no NetBox
+      netbox.netbox.netbox_device_role:
+        <<: *netbox_common
+        data:
+          name:  k8s-edge
+          color: "ff9800"  # Laranja — workers edge (ARM)
+          vm_role: true
+        state: present
+      tags: [netbox, device_role]
+
+    - name: Garantir device role storage no NetBox
+      netbox.netbox.netbox_device_role:
+        <<: *netbox_common
+        data:
+          name:  storage
+          color: "9e9e9e"  # Cinza — dispositivos de armazenamento
+          vm_role: false
+        state: present
+      tags: [netbox, device_role]
+
+    # -------------------------------------------------------------------------
+    # Devices físicos — hosts bare metal do laboratório
+    # -------------------------------------------------------------------------
+
+    # Notebook i5 — worker K3s para workloads de monitoring
+    - name: Registrar notebook-i5 como device no NetBox
+      netbox.netbox.netbox_device:
+        <<: *netbox_common
+        data:
+          name:   notebook-i5
+          device_type:
+            model: "Intel i5-2450M"
+          role:   k8s-worker
+          site:   lab-home
+          tenant: lab
+          status: active
+          custom_fields:
+            k3s_role: agent
+            workload: monitoring
+        state: present
+      tags: [netbox, device, bare-metal]
+
+    # Raspberry Pi — worker K3s para workloads de edge (ARMv7)
+    - name: Registrar raspberry-pi como device no NetBox
+      netbox.netbox.netbox_device:
+        <<: *netbox_common
+        data:
+          name:   raspberry-pi
+          device_type:
+            model: "Raspberry Pi ARMv7"
+          role:   k8s-edge
+          site:   lab-home
+          tenant: lab
+          status: active
+          custom_fields:
+            k3s_role:      agent
+            workload:      edge
+            k3s_node_arch: arm
+        state: present
+      tags: [netbox, device, bare-metal]
+
+    # NAS — servidor de armazenamento compartilhado via NFS
+    - name: Registrar NAS como device no NetBox
+      netbox.netbox.netbox_device:
+        <<: *netbox_common
+        data:
+          name:   nas
+          device_type:
+            model: "NAS Storage"
+          role:   storage
+          site:   lab-home
+          tenant: lab
+          status: active
+        state: present
+      tags: [netbox, device, bare-metal]
+
+    # -------------------------------------------------------------------------
+    # Endereços IP dos hosts físicos
+    # -------------------------------------------------------------------------
+    # Os IPs das VMs são gerenciados pelo Terraform (netbox.tf).
+    # Aqui registramos apenas os IPs dos equipamentos bare metal.
+
+    - name: Registrar IP do notebook-i5 no NetBox
+      netbox.netbox.netbox_ip_address:
+        <<: *netbox_common
+        data:
+          address:     "192.168.1.11/24"
+          status:      active
+          description: "notebook-i5 (k3s monitoring worker)"
+          assigned_object:
+            name:        notebook-i5
+            object_type: dcim.device
+        state: present
+      register: ip_notebook_i5
+      tags: [netbox, ip]
+
+    - name: Registrar IP do raspberry-pi no NetBox
+      netbox.netbox.netbox_ip_address:
+        <<: *netbox_common
+        data:
+          address:     "192.168.1.12/24"
+          status:      active
+          description: "raspberry-pi (k3s edge worker, ARMv7)"
+          assigned_object:
+            name:        raspberry-pi
+            object_type: dcim.device
+        state: present
+      register: ip_raspberry
+      tags: [netbox, ip]
+
+    - name: Registrar IP do NAS no NetBox
+      netbox.netbox.netbox_ip_address:
+        <<: *netbox_common
+        data:
+          address:     "192.168.1.5/24"
+          status:      active
+          description: "NAS Storage"
+          assigned_object:
+            name:        nas
+            object_type: dcim.device
+        state: present
+      register: ip_nas
+      tags: [netbox, ip]
+
+    # -------------------------------------------------------------------------
+    # Verificação — listar IPs registrados no prefixo de gerenciamento
+    # -------------------------------------------------------------------------
+
+    - name: Listar IPs registrados no prefixo 192.168.1.0/24 via API NetBox
+      uri:
+        url: "{{ netbox_url }}/api/ipam/ip-addresses/?prefix=192.168.1.0/24&limit=50"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+          Accept: "application/json"
+        validate_certs: false
+        status_code: 200
+      register: ip_list
+      tags: [netbox, verify]
+
+    - name: Exibir resumo dos IPs registrados no prefixo de gerenciamento
+      debug:
+        msg: >-
+          IPs registrados em 192.168.1.0/24:
+          total={{ ip_list.json.count }}
+          hosts={{ ip_list.json.results | map(attribute='address') | list }}
+      tags: [netbox, verify]

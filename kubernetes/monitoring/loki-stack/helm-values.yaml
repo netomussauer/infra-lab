@@ -1,0 +1,308 @@
+# monitoring/loki-stack/helm-values.yaml
+# Helm values para grafana/loki-stack
+#
+# Repositório: https://grafana.github.io/helm-charts
+# Chart: grafana/loki-stack
+#
+# Instalar:
+#   helm repo add grafana https://grafana.github.io/helm-charts
+#   helm upgrade --install loki grafana/loki-stack \
+#     -f kubernetes/monitoring/loki-stack/helm-values.yaml \
+#     --namespace monitoring --create-namespace
+#
+# Loki ficará acessível internamente em:
+#   http://loki.monitoring.svc.cluster.local:3100
+# Datasource já configurado no Grafana (kube-prometheus-stack values)
+
+# ============================================================
+# LOKI
+# ============================================================
+loki:
+  enabled: true
+
+  nodeSelector:
+    workload: "monitoring"
+
+  tolerations:
+    - key: "node.kubernetes.io/not-ready"
+      operator: "Exists"
+      effect: "NoExecute"
+      tolerationSeconds: 300
+    - key: "node.kubernetes.io/unreachable"
+      operator: "Exists"
+      effect: "NoExecute"
+      tolerationSeconds: 300
+
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+  persistence:
+    enabled: true
+    storageClassName: "nfs-storage"
+    accessModes:
+      - ReadWriteOnce
+    size: "20Gi"
+
+  config:
+    auth_enabled: false
+
+    ingester:
+      chunk_idle_period: "3m"
+      chunk_block_size: 262144
+      chunk_retain_period: "1m"
+      max_transfer_retries: 0
+      lifecycler:
+        ring:
+          kvstore:
+            store: "inmemory"
+          replication_factor: 1
+
+    limits_config:
+      # Retenção de 7 dias para o lab (economiza espaço no NFS)
+      retention_period: "168h"
+      enforce_metric_name: false
+      reject_old_samples: true
+      reject_old_samples_max_age: "168h"
+      # Limites de ingestão para o lab
+      ingestion_rate_mb: 16
+      ingestion_burst_size_mb: 32
+      max_entries_limit_per_query: 5000
+
+    schema_config:
+      configs:
+        - from: "2024-01-01"
+          store: boltdb-shipper
+          object_store: filesystem
+          schema: v11
+          index:
+            prefix: index_
+            period: "24h"
+
+    server:
+      http_listen_port: 3100
+      log_level: "info"
+
+    storage_config:
+      boltdb_shipper:
+        active_index_directory: /data/loki/boltdb-shipper-active
+        cache_location: /data/loki/boltdb-shipper-cache
+        cache_ttl: "24h"
+        shared_store: filesystem
+      filesystem:
+        directory: /data/loki/chunks
+
+    compactor:
+      working_directory: /data/loki/boltdb-shipper-compactor
+      shared_store: filesystem
+      # Habilitar compactação e retenção automática
+      retention_enabled: true
+      retention_delete_delay: "2h"
+      retention_delete_worker_count: 150
+
+    chunk_store_config:
+      max_look_back_period: "168h"
+
+    table_manager:
+      retention_deletes_enabled: true
+      retention_period: "168h"
+
+    query_range:
+      results_cache:
+        cache:
+          embedded_cache:
+            enabled: true
+            max_size_mb: 100
+
+  # Probes
+  livenessProbe:
+    httpGet:
+      path: /ready
+      port: 3100
+    initialDelaySeconds: 45
+    periodSeconds: 15
+    failureThreshold: 3
+    successThreshold: 1
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: 3100
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    failureThreshold: 3
+    successThreshold: 1
+
+  podLabels:
+    app.kubernetes.io/name: "loki"
+    app.kubernetes.io/component: "log-aggregation"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+
+# ============================================================
+# PROMTAIL
+# Coleta logs de TODOS os nós — tolerations obrigatórias
+# ============================================================
+promtail:
+  enabled: true
+
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"
+
+  # Tolerations para rodar em ABSOLUTAMENTE TODOS os nós do cluster
+  tolerations:
+    # Control-plane K3s
+    - key: "node-role.kubernetes.io/control-plane"
+      operator: "Exists"
+      effect: "NoSchedule"
+    - key: "node-role.kubernetes.io/master"
+      operator: "Exists"
+      effect: "NoSchedule"
+    # Nodes com problemas (continuar coletando logs para troubleshooting)
+    - key: "node.kubernetes.io/not-ready"
+      operator: "Exists"
+      effect: "NoExecute"
+    - key: "node.kubernetes.io/unreachable"
+      operator: "Exists"
+      effect: "NoExecute"
+    - key: "node.kubernetes.io/disk-pressure"
+      operator: "Exists"
+      effect: "NoSchedule"
+    - key: "node.kubernetes.io/memory-pressure"
+      operator: "Exists"
+      effect: "NoSchedule"
+    - key: "node.kubernetes.io/pid-pressure"
+      operator: "Exists"
+      effect: "NoSchedule"
+    # RPi ARM — arquitetura diferente
+    - key: "arch"
+      operator: "Exists"
+      effect: "NoSchedule"
+
+  config:
+    # Servidor Loki no namespace monitoring
+    clients:
+      - url: "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
+        tenant_id: "lab"
+        timeout: "10s"
+        backoff_config:
+          min_period: "500ms"
+          max_period: "5m"
+          max_retries: 10
+
+    positions:
+      filename: "/run/promtail/positions.yaml"
+
+    server:
+      http_listen_port: 3101
+      log_level: "info"
+
+    scrape_configs:
+      # Logs dos pods Kubernetes via CRI (containerd/K3s)
+      - job_name: "kubernetes-pods"
+        kubernetes_sd_configs:
+          - role: pod
+        pipeline_stages:
+          - cri: {}
+          - labeldrop:
+              - filename
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            target_label: node_name
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            target_label: container
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            target_label: app
+          - source_labels: [__meta_kubernetes_pod_label_environment]
+            target_label: environment
+          - source_labels: [__meta_kubernetes_pod_label_lab_id]
+            target_label: lab_id
+          - replacement: "/var/log/pods/*$1/*.log"
+            separator: "/"
+            source_labels:
+              - __meta_kubernetes_pod_uid
+              - __meta_kubernetes_pod_container_name
+            target_label: __path__
+
+      # Logs do sistema (K3s, kubelet, containerd)
+      - job_name: "system"
+        static_configs:
+          - targets: ["localhost"]
+            labels:
+              job: "system"
+              __path__: "/var/log/*.log"
+        pipeline_stages:
+          - match:
+              selector: '{job="system"}'
+              stages:
+                - regex:
+                    expression: "(?P<level>INFO|WARN|ERROR|DEBUG|FATAL)"
+                - labels:
+                    level:
+
+      # Logs do K3s (journald via arquivo)
+      - job_name: "k3s"
+        static_configs:
+          - targets: ["localhost"]
+            labels:
+              job: "k3s"
+              __path__: "/var/log/k3s*.log"
+
+  # Volumes adicionais para acesso aos logs do host
+  extraVolumes:
+    - name: varlog
+      hostPath:
+        path: /var/log
+    - name: varlibdockercontainers
+      hostPath:
+        path: /var/lib/docker/containers
+    - name: run
+      hostPath:
+        path: /run/promtail
+
+  extraVolumeMounts:
+    - name: varlog
+      mountPath: /var/log
+      readOnly: true
+    - name: varlibdockercontainers
+      mountPath: /var/lib/docker/containers
+      readOnly: true
+    - name: run
+      mountPath: /run/promtail
+
+  podLabels:
+    app.kubernetes.io/name: "promtail"
+    app.kubernetes.io/component: "log-collector"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+
+# Grafana desabilitado — já existe via kube-prometheus-stack
+grafana:
+  enabled: false
+
+# Fluent Bit desabilitado — usando Promtail
+fluent-bit:
+  enabled: false
+
+# Filebeat desabilitado
+filebeat:
+  enabled: false
+
+# Logstash desabilitado
+logstash:
+  enabled: false

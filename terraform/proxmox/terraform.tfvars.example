@@ -1,0 +1,53 @@
+# Arquivo de exemplo para terraform.tfvars.
+#
+# INSTRUÇÕES:
+#   1. Copie este arquivo: cp terraform.tfvars.example terraform.tfvars
+#   2. Preencha os valores reais no terraform.tfvars
+#   3. NUNCA comite o arquivo terraform.tfvars (já está no .gitignore)
+#
+# Como criar o token de API no Proxmox:
+#   Datacenter -> Permissions -> API Tokens -> Add
+#   Usuário: root@pam (ou usuário dedicado com permissões mínimas)
+#   Token ID: terraform-token
+#   Privilege Separation: desabilitar para root@pam em lab
+#
+# O token_id terá o formato: root@pam!terraform-token
+# O token_secret é o UUID exibido UMA VEZ na criação (guarde-o)
+
+proxmox_api_url          = "https://192.168.1.10:8006/api2/json"
+proxmox_api_token_id     = "root@pam!terraform-token"
+proxmox_api_token_secret = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+# Chave pública SSH para acesso ao usuário labadmin nas VMs
+# Gere com: ssh-keygen -t ed25519 -C "lab-key" -f ~/.ssh/lab_id_rsa
+ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... lab-key"
+
+# ID do template Ubuntu 22.04 cloud-init no Proxmox
+# Criação do template (execute no host Proxmox):
+#   wget https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img
+#   qm create 9000 --name ubuntu-2204-cloud --memory 2048 --cores 2 --net0 virtio,bridge=vmbr0
+#   qm importdisk 9000 jammy-server-cloudimg-amd64.img local-lvm
+#   qm set 9000 --scsihw virtio-scsi-pci --scsi0 local-lvm:vm-9000-disk-0
+#   qm set 9000 --ide2 local-lvm:cloudinit
+#   qm set 9000 --boot c --bootdisk scsi0
+#   qm set 9000 --serial0 socket --vga serial0
+#   qm set 9000 --agent enabled=1
+#   qm template 9000
+vm_template_id = 9000
+
+# Configurações de rede (ajuste se sua rede for diferente)
+proxmox_node = "notebook-i7"
+vm_storage   = "local-lvm"
+vm_bridge    = "vmbr0"
+gateway      = "192.168.1.1"
+dns_servers  = ["192.168.1.1", "8.8.8.8"]
+lab_network  = "192.168.1.0/24"
+
+# ---------------------------------------------------------------------------
+# NetBox IPAM
+# ---------------------------------------------------------------------------
+# URL base do NetBox já deployado como VM no Proxmox lab.
+# Gerar token em: http://<netbox-ip>/user/api-tokens/
+#   Permissões mínimas necessárias: read/write em IPAM e Virtualization
+netbox_url   = "http://192.168.1.30:8000"
+netbox_token = "seu-token-aqui"

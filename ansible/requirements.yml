@@ -1,0 +1,14 @@
+# Dependências de collections Ansible para o laboratório infra-lab.
+#
+# Instalação:
+#   ansible-galaxy collection install -r ansible/requirements.yml
+#
+# As collections abaixo são necessárias para:
+#   netbox.netbox   — inventário dinâmico e módulos de IPAM (netbox.yml, 00-netbox-register.yml)
+#   ansible.utils   — filtro ipaddr usado no compose do inventário dinâmico
+
+collections:
+  - name: netbox.netbox
+    version: ">=3.17.0"
+  - name: ansible.utils
+    version: ">=2.12.0"

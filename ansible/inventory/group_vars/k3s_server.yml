@@ -1,0 +1,31 @@
+# Variáveis específicas do nó control-plane do K3s.
+# Estes valores sobrescrevem os de group_vars/all.yml para o grupo k3s_server.
+
+# ---------------------------------------------------------------------------
+# Argumentos de instalação do k3s server
+# ---------------------------------------------------------------------------
+# Flags passadas ao instalador do K3s para o nó server.
+# Referência: https://docs.k3s.io/cli/server
+k3s_server_args: >-
+  --disable traefik
+  --disable servicelb
+  --cluster-cidr {{ k3s_cluster_cidr }}
+  --service-cidr {{ k3s_service_cidr }}
+  --write-kubeconfig-mode 644
+  --node-label workload=control-plane
+  --flannel-backend=vxlan
+  --kube-apiserver-arg=allow-privileged=true
+  --kube-controller-manager-arg=node-cidr-mask-size=24
+  --etcd-expose-metrics=true
+
+# Caminho do kubeconfig gerado pelo K3s server
+k3s_kubeconfig_path: "/etc/rancher/k3s/k3s.yaml"
+
+# Caminho do token de join do cluster
+k3s_token_path: "/var/lib/rancher/k3s/server/node-token"
+
+# Caminho local onde o kubeconfig será salvo após o setup
+k3s_local_kubeconfig: "~/.kube/infra-lab.yaml"
+
+# Taint aplicado ao control-plane para evitar workloads de usuário
+k3s_control_plane_taint: "node-role.kubernetes.io/control-plane:NoSchedule"

@@ -1,0 +1,130 @@
+# =============================================================================
+# .gitignore do laboratório home-lab infra-lab
+# Garante que arquivos sensíveis e gerados não sejam versionados
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Terraform — arquivos sensíveis e gerados
+# ---------------------------------------------------------------------------
+
+# Variáveis com valores reais (contém tokens, chaves SSH, senhas)
+*.tfvars
+!*.tfvars.example
+
+# State do Terraform — nunca versione o state local
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Planos binários gerados pelo terraform plan
+*.tfplan
+tfplan.binary
+
+# Diretório de trabalho do Terraform (providers, módulos baixados)
+.terraform/
+.terraform.lock.hcl
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Override files — usados localmente para sobrescrever configurações
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# ---------------------------------------------------------------------------
+# Ansible — arquivos sensíveis e gerados
+# ---------------------------------------------------------------------------
+
+# Vault password file (nunca versionar)
+.vault_pass
+.vault_pass.txt
+vault_password_file
+
+# Retry files gerados por falhas de playbook
+*.retry
+
+# Arquivos de vault criptografados com extensão explícita
+# (os vaults com nome descritivo devem ser versionados criptografados)
+vault.yml.plain
+
+# Inventory gerado dinamicamente
+*.generated.yml
+
+# ---------------------------------------------------------------------------
+# Kubeconfig — acesso ao cluster K3s
+# ---------------------------------------------------------------------------
+kubeconfig
+*.kubeconfig
+infra-lab.yaml
+.kube/
+
+# ---------------------------------------------------------------------------
+# Chaves e certificados
+# ---------------------------------------------------------------------------
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+*_id_rsa
+*_id_ed25519
+*.pub
+!*.pub.example
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+.Python
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---------------------------------------------------------------------------
+# Node.js
+# ---------------------------------------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+dist/
+.env
+.env.local
+.env.*.local
+
+# ---------------------------------------------------------------------------
+# IDEs e editores
+# ---------------------------------------------------------------------------
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ---------------------------------------------------------------------------
+# Logs e temporários
+# ---------------------------------------------------------------------------
+*.log
+tmp/
+temp/
+.tmp/

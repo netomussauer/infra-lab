@@ -1,0 +1,127 @@
+# Playbook 02 — Montagem dos shares NFS do NAS nos nós do cluster.
+#
+# Executa em: todos os nós do cluster K3s
+# Idempotente: sim — fstab é verificado antes de adicionar; mount verifica se já montado
+#
+# O que faz:
+#   1. Garante que nfs-common está instalado
+#   2. Cria os diretórios de ponto de montagem
+#   3. Adiciona entradas no /etc/fstab
+#   4. Monta os shares NFS
+#   5. Verifica a conectividade antes de montar
+#
+# NFS exports disponíveis no NAS (192.168.1.5):
+#   /k8s-pv   — volumes persistentes do Kubernetes
+#   /backups  — destino de backups dos workloads
+#
+# Uso:
+#   ansible-playbook -i inventory/hosts.yml playbooks/02-nfs-mounts.yml
+#   ansible-playbook -i inventory/hosts.yml playbooks/02-nfs-mounts.yml --check --diff
+
+---
+- name: Configurar montagens NFS nos nós do cluster
+  hosts: k3s_cluster
+  become: true
+  gather_facts: true
+
+  vars:
+    # Definição dos shares NFS a montar em cada nó
+    nfs_mounts:
+      - src: "{{ nfs_server }}:{{ nfs_k8s_pv_path }}"
+        path: /mnt/k8s-pv
+        opts: "{{ nfs_mount_options }}"
+        dump: 0
+        passno: 0
+      - src: "{{ nfs_server }}:{{ nfs_backups_path }}"
+        path: /mnt/backups
+        opts: "{{ nfs_mount_options }}"
+        dump: 0
+        passno: 0
+
+  tasks:
+
+    # -------------------------------------------------------------------------
+    # Pré-requisito: pacote nfs-common
+    # -------------------------------------------------------------------------
+
+    - name: Garantir que nfs-common está instalado
+      ansible.builtin.apt:
+        name: nfs-common
+        state: present
+        update_cache: false
+      tags: [nfs, packages]
+
+    # -------------------------------------------------------------------------
+    # Verificar conectividade com o NAS antes de prosseguir
+    # -------------------------------------------------------------------------
+
+    - name: Verificar que o NAS está acessível na rede
+      ansible.builtin.wait_for:
+        host: "{{ nfs_server }}"
+        port: 2049
+        timeout: 15
+        msg: >
+          NAS {{ nfs_server }} não está acessível na porta 2049 (NFS).
+          Verifique se o serviço NFS está ativo no NAS.
+      tags: [nfs, verify]
+
+    # -------------------------------------------------------------------------
+    # Criar pontos de montagem
+    # -------------------------------------------------------------------------
+
+    - name: Criar diretórios de ponto de montagem NFS
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop: "{{ nfs_mounts }}"
+      loop_control:
+        label: "{{ item.path }}"
+      tags: [nfs, directories]
+
+    # -------------------------------------------------------------------------
+    # Configurar /etc/fstab e montar shares
+    # -------------------------------------------------------------------------
+
+    - name: Adicionar entradas NFS no /etc/fstab
+      ansible.posix.mount:
+        src: "{{ item.src }}"
+        path: "{{ item.path }}"
+        fstype: nfs
+        opts: "{{ item.opts }}"
+        dump: "{{ item.dump }}"
+        passno: "{{ item.passno }}"
+        state: mounted
+        backup: true
+      loop: "{{ nfs_mounts }}"
+      loop_control:
+        label: "{{ item.path }}"
+      tags: [nfs, fstab]
+
+    # -------------------------------------------------------------------------
+    # Verificar montagens
+    # -------------------------------------------------------------------------
+
+    - name: Verificar que os shares NFS estão montados
+      ansible.builtin.command:
+        cmd: mountpoint -q {{ item.path }}
+      register: mountpoint_check
+      changed_when: false
+      failed_when: mountpoint_check.rc != 0
+      loop: "{{ nfs_mounts }}"
+      loop_control:
+        label: "{{ item.path }}"
+      tags: [nfs, verify]
+
+    - name: Exibir resumo das montagens NFS ativas
+      ansible.builtin.debug:
+        msg: >
+          NFS montado: {{ item.item.src }} -> {{ item.item.path }}
+          (host: {{ inventory_hostname }})
+      loop: "{{ mountpoint_check.results }}"
+      loop_control:
+        label: "{{ item.item.path }}"
+      when: mountpoint_check.results is defined
+      tags: [nfs, verify]
