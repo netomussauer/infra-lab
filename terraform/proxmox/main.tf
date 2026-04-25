@@ -33,7 +33,8 @@ provider "proxmox" {
 provider "netbox" {
   server_url           = var.netbox_url
   api_token            = var.netbox_token
-  allow_insecure_https = true
+  allow_insecure_https = true  # aceita certificado autoassinado em HTTPS
+  request_timeout      = 30    # segundos — evita connection refused por timeout curto
 }
 
 # ---------------------------------------------------------------------------

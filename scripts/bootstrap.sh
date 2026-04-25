@@ -157,8 +157,8 @@ if [[ "${SKIP_TERRAFORM}" == "false" ]]; then
         terraform fmt -recursive
     }
 
-    log_info "Inicializando Terraform..."
-    terraform init
+    log_info "Inicializando Terraform (atualizando providers para versões mínimas definidas)..."
+    terraform init -upgrade
 
     log_info "Validando configuração Terraform..."
     terraform validate

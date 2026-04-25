@@ -73,8 +73,9 @@ variable "dns_servers" {
 # ---------------------------------------------------------------------------
 
 variable "netbox_url" {
-  description = "URL base da API do NetBox (ex: http://192.168.1.72:8000)"
+  description = "URL base da API do NetBox — incluir esquema e porta (http://192.168.1.72:8000 ou https://... para TLS autoassinado)"
   type        = string
+  default     = "http://192.168.1.72:8000"
 }
 
 variable "netbox_token" {
