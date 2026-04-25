@@ -7,7 +7,7 @@
 #   - Endereços IP de todas as VMs e hosts físicos do lab
 #   - Objetos VirtualMachine para as VMs gerenciadas pelo Terraform
 #
-# Referência do provider: https://registry.terraform.io/providers/e-brains-de/netbox/latest/docs
+# Referência do provider: https://registry.terraform.io/providers/e-breuninger/netbox/latest/docs
 #
 # Ordem de dependência:
 #   site/tenant/tag → cluster → prefixos → ip_addresses → virtual_machines
@@ -18,8 +18,7 @@
 
 # Tag aplicada a todos os recursos do laboratório no NetBox
 resource "netbox_tag" "lab" {
-  name  = "lab"
-  color = "0277bd" # Azul Material Design 700 — identificação visual do lab
+  name = "lab"
 }
 
 # Site representa a localização física do laboratório (home lab)

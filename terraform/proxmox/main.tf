@@ -100,12 +100,10 @@ resource "proxmox_virtual_environment_vm" "k3s_server" {
     trim    = true
   }
 
-  # Configuração cloud-init: usuário, SSH, hostname e IP alocado via NetBox IPAM.
+  # Configuração cloud-init: usuário, SSH e IP alocado via NetBox IPAM.
   # O IP é lido do objeto netbox_ip_address.k3s_server criado em netbox.tf,
   # eliminando o valor hardcoded "192.168.1.30/24".
   initialization {
-    hostname = "k3s-server"
-
     user_account {
       username = local.cloud_init_user
       keys     = [var.ssh_public_key]
@@ -189,8 +187,6 @@ resource "proxmox_virtual_environment_vm" "k3s_worker_cicd" {
 
   # IP lido do objeto netbox_ip_address.k3s_worker_cicd criado em netbox.tf.
   initialization {
-    hostname = "k3s-worker-cicd"
-
     user_account {
       username = local.cloud_init_user
       keys     = [var.ssh_public_key]
@@ -271,8 +267,6 @@ resource "proxmox_virtual_environment_vm" "ci_runner" {
 
   # IP lido do objeto netbox_ip_address.ci_runner criado em netbox.tf.
   initialization {
-    hostname = "ci-runner"
-
     user_account {
       username = local.cloud_init_user
       keys     = [var.ssh_public_key]

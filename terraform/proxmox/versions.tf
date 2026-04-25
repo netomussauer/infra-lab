@@ -11,10 +11,10 @@ terraform {
     }
 
     # Provider NetBox — integração com IPAM para eliminar IPs hardcoded
-    # Documentação: https://registry.terraform.io/providers/e-brains-de/netbox/latest/docs
+    # Documentação: https://registry.terraform.io/providers/e-breuninger/netbox/latest/docs
     netbox = {
-      source  = "registry.terraform.io/e-brains-de/netbox"
-      version = "~> 3.8"
+      source  = "e-breuninger/netbox"
+      version = "~> 3.3"
     }
   }
 }
