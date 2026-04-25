@@ -12,11 +12,11 @@ terraform {
 
     # Provider NetBox — integração com IPAM para eliminar IPs hardcoded
     # Documentação: https://registry.terraform.io/providers/e-breuninger/netbox/latest/docs
-    # >= 3.9.0 obrigatório: versões anteriores têm bug de TextConsumer no go-swagger client
-    # (github.com/e-breuninger/terraform-provider-netbox/issues/263)
+    # >= 5.0.0 obrigatório: v5.x corrige bug de TextConsumer (issues/263) e
+    # renomeia disk_size_gb → disk_size_mb; vcpus passou a ser String ("2.00")
     netbox = {
       source  = "e-breuninger/netbox"
-      version = ">= 3.9.0"
+      version = ">= 5.0.0"
     }
   }
 }
