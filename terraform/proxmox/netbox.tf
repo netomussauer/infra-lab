@@ -247,48 +247,39 @@ resource "netbox_ip_address" "lb_grafana" {
 
 # VM control-plane do K3s
 resource "netbox_virtual_machine" "k3s_server" {
-  name         = "k3s-server"
-  cluster_id   = netbox_cluster.proxmox_lab.id
-  tenant_id    = netbox_tenant.lab.id
-  vcpus        = 2
-  memory_mb    = 4096
-  disk_size_gb = 40
-  status       = "active"
-  primary_ipv4 = netbox_ip_address.k3s_server.id
-  tags         = [netbox_tag.lab.id]
-  comments     = "K3s control-plane. Gerenciado pelo Terraform."
-
-  depends_on = [netbox_ip_address.k3s_server]
+  name        = "k3s-server"
+  cluster_id  = netbox_cluster.proxmox_lab.id
+  tenant_id   = netbox_tenant.lab.id
+  vcpus       = 2
+  memory_mb   = 4096
+  disk_size_mb = 40960
+  status      = "active"
+  tags        = [netbox_tag.lab.name]
+  comments    = "K3s control-plane. IP: 192.168.1.30. Gerenciado pelo Terraform."
 }
 
 # VM worker K3s dedicada a pipelines CI/CD
 resource "netbox_virtual_machine" "k3s_worker_cicd" {
-  name         = "k3s-worker-cicd"
-  cluster_id   = netbox_cluster.proxmox_lab.id
-  tenant_id    = netbox_tenant.lab.id
-  vcpus        = 4
-  memory_mb    = 6144
-  disk_size_gb = 60
-  status       = "active"
-  primary_ipv4 = netbox_ip_address.k3s_worker_cicd.id
-  tags         = [netbox_tag.lab.id]
-  comments     = "K3s worker para workloads de CI/CD. Gerenciado pelo Terraform."
-
-  depends_on = [netbox_ip_address.k3s_worker_cicd]
+  name        = "k3s-worker-cicd"
+  cluster_id  = netbox_cluster.proxmox_lab.id
+  tenant_id   = netbox_tenant.lab.id
+  vcpus       = 4
+  memory_mb   = 6144
+  disk_size_mb = 61440
+  status      = "active"
+  tags        = [netbox_tag.lab.name]
+  comments    = "K3s worker CI/CD. IP: 192.168.1.31. Gerenciado pelo Terraform."
 }
 
 # VM executor de pipelines CI
 resource "netbox_virtual_machine" "ci_runner" {
-  name         = "ci-runner"
-  cluster_id   = netbox_cluster.proxmox_lab.id
-  tenant_id    = netbox_tenant.lab.id
-  vcpus        = 2
-  memory_mb    = 4096
-  disk_size_gb = 40
-  status       = "active"
-  primary_ipv4 = netbox_ip_address.ci_runner.id
-  tags         = [netbox_tag.lab.id]
-  comments     = "Executor de pipelines CI. Gerenciado pelo Terraform."
-
-  depends_on = [netbox_ip_address.ci_runner]
+  name        = "ci-runner"
+  cluster_id  = netbox_cluster.proxmox_lab.id
+  tenant_id   = netbox_tenant.lab.id
+  vcpus       = 2
+  memory_mb   = 4096
+  disk_size_mb = 40960
+  status      = "active"
+  tags        = [netbox_tag.lab.name]
+  comments    = "Executor de pipelines CI (Tekton runner). IP: 192.168.1.32. Gerenciado pelo Terraform."
 }
