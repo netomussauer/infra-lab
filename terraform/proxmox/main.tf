@@ -33,8 +33,8 @@ provider "proxmox" {
 provider "netbox" {
   server_url           = var.netbox_url
   api_token            = var.netbox_token
-  allow_insecure_https = true  # aceita certificado autoassinado em HTTPS
-  request_timeout      = 30    # segundos — evita connection refused por timeout curto
+  allow_insecure_https = true # aceita certificado autoassinado em HTTPS
+  request_timeout      = 30   # segundos — evita connection refused por timeout curto
 }
 
 # ---------------------------------------------------------------------------
@@ -89,10 +89,11 @@ resource "proxmox_virtual_environment_vm" "k3s_server" {
   }
 
   # Interface de rede na bridge principal do laboratório
+  # Nota: o atributo `enabled` foi removido do network_device — o provider bpg/proxmox
+  # deprecou o atributo; para desabilitar a interface, remova o bloco inteiro.
   network_device {
-    bridge  = var.vm_bridge
-    model   = "virtio"
-    enabled = true
+    bridge = var.vm_bridge
+    model  = "virtio"
   }
 
   # Agente QEMU para melhor integração com o Proxmox (shutdown gracioso, IPs, etc.)
@@ -176,9 +177,8 @@ resource "proxmox_virtual_environment_vm" "k3s_worker_cicd" {
   }
 
   network_device {
-    bridge  = var.vm_bridge
-    model   = "virtio"
-    enabled = true
+    bridge = var.vm_bridge
+    model  = "virtio"
   }
 
   agent {
@@ -256,9 +256,8 @@ resource "proxmox_virtual_environment_vm" "ci_runner" {
   }
 
   network_device {
-    bridge  = var.vm_bridge
-    model   = "virtio"
-    enabled = true
+    bridge = var.vm_bridge
+    model  = "virtio"
   }
 
   agent {

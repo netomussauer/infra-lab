@@ -73,7 +73,7 @@ variable "dns_servers" {
 # ---------------------------------------------------------------------------
 
 variable "netbox_url" {
-  description = "URL base da API do NetBox — usar https:// pois o serviço expõe TLS na porta 443 com certificado autoassinado"
+  description = "URL base da API do NetBox sem trailing slash — o provider v5.x faz strip automático de trailing slashes; inclua apenas o host e porta"
   type        = string
   default     = "https://192.168.1.72"
 }

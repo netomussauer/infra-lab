@@ -176,10 +176,19 @@ podLabels:
   lab_owner: "jose.mussauer"
 
 # SecurityContext
+# runAsUser: 1000 (git user no container Gitea) — UID 1000 nao e root, portanto
+# runAsNonRoot: true e correto e deve ser mantido.
 securityContext:
-  runAsNonRoot: false   # Gitea precisa de UID 1000, mas o chart gerencia isso
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
   fsGroup: 1000
 
 containerSecurityContext:
+  runAsNonRoot: true
   runAsUser: 1000
   runAsGroup: 1000
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL

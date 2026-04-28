@@ -308,14 +308,28 @@ spec:
           metadata:
             labels:
               app.kubernetes.io/name: "gitea-event-listener"
+              app.kubernetes.io/component: "tekton-triggers"
+              app.kubernetes.io/managed-by: "kubectl"
               environment: "lab"
               lab_id: "lab-k8s-01"
               lab_owner: "jose.mussauer"
           spec:
             nodeSelector:
               workload: "cicd"
+            serviceAccountName: tekton-triggers-sa
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 65532
+              runAsGroup: 65532
+              fsGroup: 65532
             containers:
               - name: event-listener
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  readOnlyRootFilesystem: true
+                  capabilities:
+                    drop:
+                      - ALL
                 resources:
                   requests:
                     cpu: "50m"

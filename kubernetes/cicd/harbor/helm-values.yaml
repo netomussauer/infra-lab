@@ -83,6 +83,20 @@ nginx:
       memory: "128Mi"
   nodeSelector:
     workload: "cicd"
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 15
+    failureThreshold: 3
+    successThreshold: 1
+    timeoutSeconds: 5
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    failureThreshold: 3
+    successThreshold: 1
+    timeoutSeconds: 5
 
 portal:
   resources:
@@ -94,6 +108,20 @@ portal:
       memory: "128Mi"
   nodeSelector:
     workload: "cicd"
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 15
+    failureThreshold: 3
+    successThreshold: 1
+    timeoutSeconds: 5
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    failureThreshold: 3
+    successThreshold: 1
+    timeoutSeconds: 5
 
 core:
   resources:
@@ -136,6 +164,20 @@ jobservice:
   jobLoggers:
     - file
   loggerSweeperDuration: 14    # dias
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 15
+    failureThreshold: 3
+    successThreshold: 1
+    timeoutSeconds: 5
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 20
+    periodSeconds: 10
+    failureThreshold: 3
+    successThreshold: 1
+    timeoutSeconds: 5
 
 registry:
   resources:
@@ -147,6 +189,20 @@ registry:
       memory: "512Mi"
   nodeSelector:
     workload: "cicd"
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 15
+    failureThreshold: 3
+    successThreshold: 1
+    timeoutSeconds: 5
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 20
+    periodSeconds: 10
+    failureThreshold: 3
+    successThreshold: 1
+    timeoutSeconds: 5
   controller:
     resources:
       requests:
