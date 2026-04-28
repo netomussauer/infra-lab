@@ -81,11 +81,10 @@ resource "proxmox_virtual_environment_vm" "k3s_server" {
   # Disco principal — sistema operacional
   disk {
     datastore_id = var.vm_storage
-    interface    = "scsi0"
+    interface    = "virtio0"
     size         = 40
     file_format  = "raw"
     discard      = "on"
-    ssd          = true
   }
 
   # Interface de rede na bridge principal do laboratório
@@ -126,7 +125,7 @@ resource "proxmox_virtual_environment_vm" "k3s_server" {
   }
 
   # Configurações de boot e hardware
-  boot_order    = ["scsi0"]
+  boot_order    = ["virtio0"]
   scsi_hardware = "virtio-scsi-pci"
   machine       = "q35"
   bios          = "seabios"
@@ -169,11 +168,10 @@ resource "proxmox_virtual_environment_vm" "k3s_worker_cicd" {
 
   disk {
     datastore_id = var.vm_storage
-    interface    = "scsi0"
+    interface    = "virtio0"
     size         = 60
     file_format  = "raw"
     discard      = "on"
-    ssd          = true
   }
 
   network_device {
@@ -207,7 +205,7 @@ resource "proxmox_virtual_environment_vm" "k3s_worker_cicd" {
     }
   }
 
-  boot_order    = ["scsi0"]
+  boot_order    = ["virtio0"]
   scsi_hardware = "virtio-scsi-pci"
   machine       = "q35"
   bios          = "seabios"
@@ -248,11 +246,10 @@ resource "proxmox_virtual_environment_vm" "ci_runner" {
 
   disk {
     datastore_id = var.vm_storage
-    interface    = "scsi0"
+    interface    = "virtio0"
     size         = 40
     file_format  = "raw"
     discard      = "on"
-    ssd          = true
   }
 
   network_device {
@@ -286,7 +283,7 @@ resource "proxmox_virtual_environment_vm" "ci_runner" {
     }
   }
 
-  boot_order    = ["scsi0"]
+  boot_order    = ["virtio0"]
   scsi_hardware = "virtio-scsi-pci"
   machine       = "q35"
   bios          = "seabios"
