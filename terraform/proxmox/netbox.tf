@@ -62,8 +62,9 @@ resource "netbox_prefix" "management" {
 }
 
 # Pool de IPs reservado para serviços MetalLB LoadBalancer no cluster K3s
+# /27 cobre 192.168.1.192–223, acomodando os IPs .200–.210 alocados aos serviços
 resource "netbox_prefix" "metallb_pool" {
-  prefix      = "192.168.1.200/28"
+  prefix      = "192.168.1.192/27"
   status      = "active"
   site_id     = netbox_site.lab_home.id
   description = "MetalLB LoadBalancer pool"
@@ -195,7 +196,7 @@ resource "netbox_ip_address" "homeassistant" {
 
 # IP do serviço LoadBalancer do Gitea (Git server auto-hospedado)
 resource "netbox_ip_address" "lb_gitea" {
-  ip_address  = "192.168.1.200/28"
+  ip_address  = "192.168.1.200/27"
   status      = "active"
   description = "MetalLB — Gitea"
 
@@ -204,7 +205,7 @@ resource "netbox_ip_address" "lb_gitea" {
 
 # IP do serviço LoadBalancer do Harbor (registry de imagens OCI)
 resource "netbox_ip_address" "lb_harbor" {
-  ip_address  = "192.168.1.201/28"
+  ip_address  = "192.168.1.201/27"
   status      = "active"
   description = "MetalLB — Harbor"
 
@@ -213,7 +214,7 @@ resource "netbox_ip_address" "lb_harbor" {
 
 # IP do serviço LoadBalancer do ArgoCD (GitOps / CD)
 resource "netbox_ip_address" "lb_argocd" {
-  ip_address  = "192.168.1.202/28"
+  ip_address  = "192.168.1.202/27"
   status      = "active"
   description = "MetalLB — ArgoCD"
 
@@ -222,7 +223,7 @@ resource "netbox_ip_address" "lb_argocd" {
 
 # IP do serviço LoadBalancer do Tekton EventListener (gatilhos de pipeline)
 resource "netbox_ip_address" "lb_tekton" {
-  ip_address  = "192.168.1.203/28"
+  ip_address  = "192.168.1.203/27"
   status      = "active"
   description = "MetalLB — Tekton EventListener"
 
@@ -231,7 +232,7 @@ resource "netbox_ip_address" "lb_tekton" {
 
 # IP do serviço LoadBalancer do Grafana (observabilidade / dashboards)
 resource "netbox_ip_address" "lb_grafana" {
-  ip_address  = "192.168.1.210/28"
+  ip_address  = "192.168.1.210/27"
   status      = "active"
   description = "MetalLB — Grafana"
 
