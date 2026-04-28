@@ -127,7 +127,7 @@ resource "proxmox_virtual_environment_vm" "k3s_server" {
   # Configurações de boot e hardware
   boot_order    = ["virtio0"]
   scsi_hardware = "virtio-scsi-pci"
-  machine       = "q35"
+  machine       = "pc"
   bios          = "seabios"
 
   # Tags para identificação no painel do Proxmox
@@ -207,7 +207,7 @@ resource "proxmox_virtual_environment_vm" "k3s_worker_cicd" {
 
   boot_order    = ["virtio0"]
   scsi_hardware = "virtio-scsi-pci"
-  machine       = "q35"
+  machine       = "pc"
   bios          = "seabios"
 
   tags = local.common_tags
@@ -285,7 +285,7 @@ resource "proxmox_virtual_environment_vm" "ci_runner" {
 
   boot_order    = ["virtio0"]
   scsi_hardware = "virtio-scsi-pci"
-  machine       = "q35"
+  machine       = "pc"
   bios          = "seabios"
 
   tags = local.common_tags
