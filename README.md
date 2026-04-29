@@ -81,7 +81,8 @@ infra-lab/
 └── scripts/
     ├── bootstrap.sh             # Orquestra Terraform + Ansible
     ├── k8s-bootstrap.sh         # Instala stack K8s via Helm
-    └── get-kubeconfig.sh        # Copia kubeconfig do k3s-server
+    ├── get-kubeconfig.sh        # Copia kubeconfig do k3s-server (Linux/macOS)
+    └── get-kubeconfig.ps1       # Copia kubeconfig do k3s-server (Windows/PowerShell)
 ```
 
 ## Início rápido
@@ -117,13 +118,48 @@ export NETBOX_TOKEN=<token gerado em /user/api-tokens/>
 ```bash
 # Provisiona VMs no Proxmox + registra tudo no NetBox
 ./scripts/bootstrap.sh
+```
 
-# Instala stack Kubernetes completa
+### 4. Obter o kubeconfig do K3s
+
+O arquivo `~/.kube/infra-lab.yaml` não existe no repositório — ele é gerado copiando
+`/etc/rancher/k3s/k3s.yaml` do servidor K3s e substituindo o endereço loopback pelo IP real.
+Execute o script abaixo **antes** de qualquer comando `kubectl` ou do bootstrap do cluster:
+
+**Linux / macOS:**
+
+```bash
+# Requer: chave SSH em ~/.ssh/lab_id_rsa autorizada no host labadmin@192.168.1.30
+./scripts/get-kubeconfig.sh
+
+# Exportar para a sessão atual (ou adicionar ao ~/.bashrc / ~/.zshrc para persistir)
+export KUBECONFIG=~/.kube/infra-lab.yaml
+
+# Verificar nós do cluster
+kubectl get nodes -o wide
+```
+
+**Windows (PowerShell):**
+
+```powershell
+# Requer: chave SSH em ~\.ssh\lab_id_rsa autorizada no host labadmin@192.168.1.30
+.\scripts\get-kubeconfig.ps1
+
+# Exportar para a sessão atual (ou adicionar ao $PROFILE para persistir)
+$env:KUBECONFIG = "$env:USERPROFILE\.kube\infra-lab.yaml"
+
+# Verificar nós do cluster
+kubectl get nodes -o wide
+```
+
+### 5. Instalar stack Kubernetes completa
+
+```bash
 export KUBECONFIG=~/.kube/infra-lab.yaml
 ./scripts/k8s-bootstrap.sh
 ```
 
-### 4. Acessos após o bootstrap
+### 6. Acessos após o bootstrap
 
 | Serviço | Endereço |
 |---------|----------|
