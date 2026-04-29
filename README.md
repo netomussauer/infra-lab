@@ -124,7 +124,8 @@ export NETBOX_TOKEN=<token gerado em /user/api-tokens/>
 
 O arquivo `~/.kube/infra-lab.yaml` não existe no repositório — ele é gerado copiando
 `/etc/rancher/k3s/k3s.yaml` do servidor K3s e substituindo o endereço loopback pelo IP real.
-Execute o script abaixo **antes** de qualquer comando `kubectl` ou do bootstrap do cluster:
+Execute este script **após** o `bootstrap.sh` do passo 3 (que instala o K3s via Ansible) e
+**antes** do `k8s-bootstrap.sh` do passo 5:
 
 **Linux / macOS:**
 

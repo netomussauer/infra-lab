@@ -798,15 +798,29 @@ A ordem abaixo é obrigatória. Dependências em cadeia tornam inviável pular e
 
 [ ] 11. Verificar todos os nós: kubectl get nodes -o wide
          Todos devem aparecer em status Ready
+
+[ ] 12. Copiar kubeconfig para a máquina de trabalho
+         O arquivo /etc/rancher/k3s/k3s.yaml só existe no k3s-server após a instalação.
+         Copie-o para a máquina local antes de executar qualquer comando kubectl ou helm:
+
+         Linux/macOS:
+           ./scripts/get-kubeconfig.sh
+           export KUBECONFIG=~/.kube/infra-lab.yaml
+
+         Windows (PowerShell):
+           .\scripts\get-kubeconfig.ps1
+           $env:KUBECONFIG = "$env:USERPROFILE\.kube\infra-lab.yaml"
+
+         Verificar: kubectl get nodes -o wide
 ```
 
 ### Fase 2 — Infraestrutura do cluster
 
 ```
-[ ] 12. Instalar Helm (na máquina de trabalho ou no k3s-server)
+[ ] 13. Instalar Helm (na máquina de trabalho ou no k3s-server)
          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
-[ ] 13. Instalar NFS Subdir External Provisioner
+[ ] 14. Instalar NFS Subdir External Provisioner
          helm repo add nfs-subdir-external-provisioner \
            https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner/
          helm install nfs-provisioner nfs-subdir-external-provisioner/nfs-subdir-external-provisioner \
@@ -815,16 +829,16 @@ A ordem abaixo é obrigatória. Dependências em cadeia tornam inviável pular e
            --set storageClass.defaultClass=true
          Verificar: kubectl get storageclass
 
-[ ] 14. Instalar MetalLB
+[ ] 15. Instalar MetalLB
          helm repo add metallb https://metallb.github.io/metallb
          helm install metallb metallb/metallb -n metallb-system --create-namespace
          Aplicar IPAddressPool e L2Advertisement com range 192.168.1.200-220
 
-[ ] 15. Instalar Traefik (via Helm, versão controlada)
+[ ] 16. Instalar Traefik (via Helm, versão controlada)
          helm repo add traefik https://helm.traefik.io/traefik
          helm install traefik traefik/traefik -n kube-system
 
-[ ] 16. Instalar cert-manager
+[ ] 17. Instalar cert-manager
          helm repo add jetstack https://charts.jetstack.io
          helm install cert-manager jetstack/cert-manager \
            --namespace cert-manager --create-namespace \
@@ -835,20 +849,20 @@ A ordem abaixo é obrigatória. Dependências em cadeia tornam inviável pular e
 ### Fase 3 — Stack CI/CD
 
 ```
-[ ] 17. Instalar Gitea
+[ ] 18. Instalar Gitea
          helm repo add gitea-charts https://dl.gitea.io/charts/
          helm install gitea gitea-charts/gitea -n cicd --create-namespace
          Configurar Ingress e PVC (StorageClass nfs-storage)
          Criar repositórios: app-repo e gitops-manifests
 
-[ ] 18. Instalar Harbor
+[ ] 19. Instalar Harbor
          helm repo add harbor https://helm.goharbor.io
          helm install harbor harbor/harbor -n cicd \
            --set persistence.persistentVolumeClaim.registry.storageClass=nfs-storage \
            --set expose.ingress.hosts.core=harbor.<dominio-local>
          Criar projeto no Harbor para imagens do lab
 
-[ ] 19. Instalar Tekton Pipelines
+[ ] 20. Instalar Tekton Pipelines
          kubectl apply -f https://storage.googleapis.com/tekton-releases/pipeline/latest/release.yaml
          Instalar Tekton Triggers:
          kubectl apply -f https://storage.googleapis.com/tekton-releases/triggers/latest/release.yaml
@@ -856,7 +870,7 @@ A ordem abaixo é obrigatória. Dependências em cadeia tornam inviável pular e
          kubectl apply -f https://storage.googleapis.com/tekton-releases/dashboard/latest/release.yaml
          Criar Pipeline, Tasks e EventListener para o fluxo descrito na Seção 5
 
-[ ] 20. Instalar ArgoCD
+[ ] 21. Instalar ArgoCD
          kubectl create namespace argocd
          kubectl apply -n argocd -f \
            https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
@@ -868,7 +882,7 @@ A ordem abaixo é obrigatória. Dependências em cadeia tornam inviável pular e
 ### Fase 4 — Monitoramento e Logs
 
 ```
-[ ] 21. Instalar kube-prometheus-stack (Prometheus + Grafana + AlertManager)
+[ ] 22. Instalar kube-prometheus-stack (Prometheus + Grafana + AlertManager)
          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
          helm install kube-prometheus-stack \
            prometheus-community/kube-prometheus-stack \
@@ -878,7 +892,7 @@ A ordem abaixo é obrigatória. Dependências em cadeia tornam inviável pular e
            --set alertmanager.alertmanagerSpec.nodeSelector.workload=monitoring
          Configurar PVCs via nfs-storage para Prometheus TSDB e Grafana
 
-[ ] 22. Instalar Loki + Promtail
+[ ] 23. Instalar Loki + Promtail
          helm repo add grafana https://grafana.github.io/helm-charts
          helm install loki grafana/loki-stack \
            -n monitoring \
@@ -887,17 +901,17 @@ A ordem abaixo é obrigatória. Dependências em cadeia tornam inviável pular e
            --set promtail.enabled=true
          Verificar Promtail DaemonSet em todos os nós (incluindo RPi)
 
-[ ] 23. Instalar Blackbox Exporter
+[ ] 24. Instalar Blackbox Exporter
          helm install prometheus-blackbox-exporter \
            prometheus-community/prometheus-blackbox-exporter \
            -n monitoring
          Criar ProbeRules para Gitea, Harbor, ArgoCD
 
-[ ] 24. Configurar Alertas no AlertManager
+[ ] 25. Configurar Alertas no AlertManager
          Criar alertas listados na Seção 6.3
          Configurar receiver (email ou webhook)
 
-[ ] 25. Importar dashboards no Grafana
+[ ] 26. Importar dashboards no Grafana
          Dashboard ID 1860 (Node Exporter Full)
          Dashboard ID 13332 (Loki Logs)
          Dashboard ID 14584 (ArgoCD)
@@ -908,7 +922,7 @@ A ordem abaixo é obrigatória. Dependências em cadeia tornam inviável pular e
 ### Fase 5 — Backup
 
 ```
-[ ] 26. Instalar Velero
+[ ] 27. Instalar Velero
          helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts
          helm install velero vmware-tanzu/velero \
            -n velero --create-namespace \
@@ -918,7 +932,7 @@ A ordem abaixo é obrigatória. Dependências em cadeia tornam inviável pular e
          Criar BackupSchedule diário: velero schedule create daily-backup \
            --schedule="0 2 * * *" --ttl 168h
 
-[ ] 27. Validar backup e restore em ambiente de teste
+[ ] 28. Validar backup e restore em ambiente de teste
          velero backup create test-backup --include-namespaces cicd
          Simular falha e executar: velero restore create --from-backup test-backup
 ```
@@ -926,7 +940,7 @@ A ordem abaixo é obrigatória. Dependências em cadeia tornam inviável pular e
 ### Fase 6 — Validação final
 
 ```
-[ ] 28. Executar pipeline end-to-end:
+[ ] 29. Executar pipeline end-to-end:
          git push → verificar webhook no Gitea
          → verificar PipelineRun no Tekton Dashboard
          → verificar imagem no Harbor
@@ -934,11 +948,11 @@ A ordem abaixo é obrigatória. Dependências em cadeia tornam inviável pular e
          → verificar sync no ArgoCD
          → verificar Pod com nova imagem no cluster
 
-[ ] 29. Validar monitoramento:
+[ ] 30. Validar monitoramento:
          Desligar um nó e verificar alerta NodeDown no AlertManager
          Verificar logs do nó no Grafana/Loki
 
-[ ] 30. Documentar IPs e credenciais no gerenciador de senhas (nunca em Git)
+[ ] 31. Documentar IPs e credenciais no gerenciador de senhas (nunca em Git)
 ```
 
 ---
