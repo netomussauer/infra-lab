@@ -1,0 +1,186 @@
+# Playbook 00-baremetal-init — Provisionamento inicial dos nós bare-metal.
+#
+# Executa em: lab_physical (notebook-i5 e raspberry-pi)
+# Pré-requisito:
+#   - Conectividade SSH com o usuário inicial do nó (pi, ubuntu, etc.)
+#   - A chave lab_id_rsa já deve estar em authorized_keys desse usuário,
+#     OU usar -k (--ask-pass) para autenticação com senha na primeira execução.
+#
+# Variáveis obrigatórias (via -e ou host_vars):
+#   baremetal_init_user  — usuário inicial que já existe no nó (ex: pi, ubuntu)
+#
+# O que faz:
+#   1. Cria o grupo e usuário labadmin
+#   2. Configura sudo NOPASSWD para labadmin
+#   3. Adiciona a chave SSH do laboratório ao authorized_keys do labadmin
+#   4. Endurece SSH (desabilita root login e autenticação por senha)
+#   5. Habilita e garante que o serviço SSH está rodando
+#
+# Uso (primeira vez — com senha):
+#   ansible-playbook -i inventory/hosts.yml playbooks/00-baremetal-init.yml \
+#     --limit notebook-i5,raspberry-pi \
+#     -u <usuario_inicial> -k --ask-become-pass \
+#     -e "baremetal_init_user=<usuario_inicial>"
+#
+# Uso (após instalação da chave via init-baremetal.sh):
+#   ansible-playbook -i inventory/hosts.yml playbooks/00-baremetal-init.yml \
+#     --limit notebook-i5,raspberry-pi \
+#     -u <usuario_inicial> --private-key ~/.ssh/lab_id_rsa
+
+---
+- name: Provisionamento inicial dos nós bare-metal
+  hosts: lab_physical
+  become: true
+  gather_facts: true
+
+  vars:
+    # Usuário inicial do nó — sobrescrever via -e ou host_vars
+    baremetal_init_user: "{{ ansible_user }}"
+    lab_ssh_public_key: "{{ lookup('file', '~/.ssh/lab_id_rsa.pub') }}"
+
+  handlers:
+    - name: Recarregar sshd
+      ansible.builtin.service:
+        name: "{{ 'ssh' if ansible_os_family == 'Debian' else 'sshd' }}"
+        state: reloaded
+
+  tasks:
+
+    # -------------------------------------------------------------------------
+    # Verificações iniciais
+    # -------------------------------------------------------------------------
+
+    - name: Exibir informações do nó
+      ansible.builtin.debug:
+        msg: >
+          Nó: {{ inventory_hostname }} |
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }} |
+          Arch: {{ ansible_architecture }} |
+          User inicial: {{ baremetal_init_user }}
+      tags: [always]
+
+    # -------------------------------------------------------------------------
+    # Garantir que SSH está habilitado e rodando
+    # -------------------------------------------------------------------------
+
+    - name: Garantir que openssh-server está instalado
+      ansible.builtin.package:
+        name: openssh-server
+        state: present
+      tags: [ssh]
+
+    - name: Habilitar e iniciar serviço SSH
+      ansible.builtin.systemd:
+        name: "{{ 'ssh' if ansible_os_family == 'Debian' else 'sshd' }}"
+        enabled: true
+        state: started
+        daemon_reload: true
+      tags: [ssh]
+
+    # -------------------------------------------------------------------------
+    # Criar usuário labadmin
+    # -------------------------------------------------------------------------
+
+    - name: Criar grupo labadmin
+      ansible.builtin.group:
+        name: labadmin
+        state: present
+      tags: [users]
+
+    - name: Criar usuário labadmin
+      ansible.builtin.user:
+        name: labadmin
+        group: labadmin
+        groups: [sudo]
+        append: true
+        shell: /bin/bash
+        create_home: true
+        state: present
+        comment: "Usuário de administração do laboratório"
+      tags: [users]
+
+    - name: Criar diretório .ssh do labadmin
+      ansible.builtin.file:
+        path: /home/labadmin/.ssh
+        state: directory
+        owner: labadmin
+        group: labadmin
+        mode: "0700"
+      tags: [users]
+
+    - name: Autorizar chave SSH do laboratório para labadmin
+      ansible.posix.authorized_key:
+        user: labadmin
+        key: "{{ lab_ssh_public_key }}"
+        state: present
+        exclusive: false
+      tags: [users, ssh-keys]
+
+    - name: Configurar sudo sem senha para labadmin
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers.d/labadmin
+        line: "labadmin ALL=(ALL) NOPASSWD:ALL"
+        create: true
+        mode: "0440"
+        validate: "visudo -cf %s"
+      tags: [users]
+
+    # -------------------------------------------------------------------------
+    # Hardening SSH
+    # -------------------------------------------------------------------------
+
+    - name: Desabilitar login SSH como root
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PermitRootLogin'
+        line: 'PermitRootLogin no'
+        state: present
+        backup: true
+      notify: Recarregar sshd
+      tags: [ssh]
+
+    - name: Habilitar autenticação por chave pública
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PubkeyAuthentication'
+        line: 'PubkeyAuthentication yes'
+        state: present
+      notify: Recarregar sshd
+      tags: [ssh]
+
+    - name: Configurar ClientAliveInterval
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?ClientAliveInterval'
+        line: 'ClientAliveInterval 120'
+        state: present
+      notify: Recarregar sshd
+      tags: [ssh]
+
+    # -------------------------------------------------------------------------
+    # Verificação final
+    # -------------------------------------------------------------------------
+
+    - name: Testar acesso SSH com labadmin (validação local)
+      ansible.builtin.command:
+        cmd: >
+          ssh -o BatchMode=yes
+          -o StrictHostKeyChecking=no
+          -o ConnectTimeout=5
+          -i ~/.ssh/lab_id_rsa
+          labadmin@{{ ansible_host }}
+          'echo SSH_LABADMIN_OK'
+      delegate_to: localhost
+      become: false
+      register: ssh_test
+      changed_when: false
+      failed_when: "'SSH_LABADMIN_OK' not in ssh_test.stdout"
+      tags: [verify]
+
+    - name: Confirmar provisionamento concluído
+      ansible.builtin.debug:
+        msg: >
+          Nó {{ inventory_hostname }} ({{ ansible_host }}) provisionado.
+          SSH labadmin: FUNCIONANDO.
+          Próximo passo: ansible-playbook 01-base-setup.yml --limit {{ inventory_hostname }}
+      tags: [verify]
