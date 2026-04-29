@@ -6,81 +6,113 @@ Laboratório completo de infraestrutura home-lab com cluster Kubernetes K3s mult
 
 | IP | Host / Serviço | OS / Plataforma | Papel |
 | --- | --- | --- | --- |
-| `192.168.1.20` | notebook-i7 | Proxmox VE | Hypervisor — VMs K3s + serviços |
+| `192.168.1.20` | notebook-i7 | Proxmox VE 8.x | Hypervisor — VMs K3s |
 | `192.168.1.30` | k3s-server *(VM)* | Ubuntu 22.04 | K3s control-plane |
 | `192.168.1.31` | k3s-worker-cicd *(VM)* | Ubuntu 22.04 | K3s worker — CI/CD |
 | `192.168.1.32` | ci-runner *(VM)* | Ubuntu 22.04 | Tekton runner |
-| `192.168.1.65` | notebook-i5 | Ubuntu 22.04 | K3s worker — monitoring |
+| `192.168.1.65` | notebook-i5 — hostname: `ubuntu-neto` | Ubuntu 24.04 | K3s worker — monitoring |
 | `192.168.1.72` | netbox-vm *(VM)* | — | NetBox IPAM |
-| `192.168.1.76` | bookstack *(VM)* | — | Wiki / documentação |
-| `192.168.1.107` | homeassistant *(VM)* | — | Automação residencial |
-| `192.168.1.110` | raspberry-pi | Raspbian 12 | K3s worker — edge (ARMv7) |
-| `192.168.1.112` | nas | NAS OS | NFS storage (3 TB) |
+| `192.168.1.110` | raspberry-pi — hostname: `raspneto` | Raspbian 12 | K3s worker — edge (ARMv7) |
+| `192.168.1.112` | nas | NAS OS (Seagate Black Armor) | NFS storage NFSv3 |
 | `192.168.1.200–220` | MetalLB pool | — | LoadBalancer Services K3s |
+| `192.168.1.201` | Gitea | — | Git + CI webhook |
+| `192.168.1.202` | Harbor | — | Container registry |
+| `192.168.1.203` | ArgoCD | — | GitOps controller |
+| `192.168.1.204` | Tekton EventListener | — | Webhook receptor |
+| `192.168.1.210` | Grafana | — | Dashboards de monitoramento |
 | `192.168.1.254` | gateway | — | Roteador doméstico |
 
 ## Stack
 
-| Camada | Tecnologias |
-|--------|-------------|
-| Kubernetes | K3s, MetalLB, Traefik, cert-manager |
-| CI/CD | Gitea, Tekton Pipelines, Harbor, ArgoCD |
-| Monitoring | Prometheus, Grafana, Loki, Promtail, AlertManager |
+| Camada | Componentes |
+| --- | --- |
+| Kubernetes | K3s v1.29.3, MetalLB v0.14.3, Traefik v2, Flannel VXLAN |
+| CI/CD | Gitea 1.25.5, Tekton Pipelines + Triggers, Harbor 2.14.3, ArgoCD v3.3.8 |
+| Monitoring | kube-prometheus-stack (Prometheus + Grafana + AlertManager), Loki Stack |
 | IaC | Terraform (Proxmox + NetBox), Ansible |
 | IPAM | NetBox |
+| Storage | `local-path` provisioner (K3s built-in) · `nfs-storage` (NFSv3, disponível) |
 
 ## Documentação
 
-- [Arquitetura completa](docs/architecture.md) — topologia, diagramas, decisões de design, ordem de instalação
+| Documento | Conteúdo |
+| --- | --- |
+| [docs/architecture.md](docs/architecture.md) | Topologia, inventário de hardware, diagrama do cluster, componentes por namespace |
+| [docs/adr.md](docs/adr.md) | 9 Architecture Decision Records — por que cada tecnologia foi escolhida |
+| [docs/runbook.md](docs/runbook.md) | Procedimentos de instalação, operações day-2 e P1–P19 de troubleshooting |
 
 ## Estrutura do repositório
 
 ```
 infra-lab/
 ├── docs/
-│   └── architecture.md          # Referência central — leia antes de qualquer outra coisa
+│   ├── architecture.md          # Topologia, hardware, cluster — leia primeiro
+│   ├── adr.md                   # Decisões de design (K3s, Harbor, Tekton, etc.)
+│   └── runbook.md               # Instalação, day-2 ops, troubleshooting P1-P19
 │
 ├── terraform/proxmox/
 │   ├── main.tf                  # VMs no Proxmox (IPs via NetBox)
 │   ├── netbox.tf                # Registros IPAM: prefixos, IPs, VMs
 │   ├── variables.tf
 │   ├── versions.tf
+│   ├── outputs.tf
 │   └── terraform.tfvars.example # Copiar para terraform.tfvars e preencher
 │
 ├── ansible/
+│   ├── ansible.cfg
 │   ├── inventory/
-│   │   ├── hosts.yml            # Inventário estático (fallback)
+│   │   ├── hosts.yml            # Inventário estático
 │   │   ├── netbox.yml           # Inventário dinâmico via NetBox
 │   │   └── group_vars/
+│   │       ├── all.yml          # Variáveis globais (SSH, NFS, K3s version)
+│   │       ├── k3s_server.yml
+│   │       └── k3s_agents.yml
 │   ├── playbooks/
+│   │   ├── 00-baremetal-init.yml   # Provisionamento inicial de hosts bare metal
 │   │   ├── 00-netbox-register.yml  # Registra hosts físicos no NetBox
 │   │   ├── 01-base-setup.yml       # OS, pacotes, sysctl, swap
 │   │   ├── 02-nfs-mounts.yml       # Monta NFS shares do NAS
 │   │   ├── 03-k3s-server.yml       # Instala K3s control-plane
 │   │   ├── 04-k3s-agents.yml       # Junta workers ao cluster
-│   │   └── 05-post-setup.yml       # Labels, taints, verificação
+│   │   └── 05-post-setup.yml       # Labels, taints, verificação final
 │   └── requirements.yml
 │
 ├── kubernetes/
 │   ├── bootstrap/
-│   │   ├── namespaces.yaml
-│   │   ├── metallb/             # IPAddressPool 192.168.1.200-220
-│   │   └── storage/             # StorageClass nfs-storage (default)
+│   │   ├── namespaces.yaml         # Namespaces: cicd, registry, monitoring
+│   │   ├── metallb/
+│   │   │   ├── metallb-install.yaml
+│   │   │   └── ipaddresspool.yaml  # Pool 192.168.1.200-220
+│   │   └── storage/
+│   │       ├── nfs-csi-values.yaml
+│   │       └── nfs-storageclass.yaml
 │   ├── cicd/
-│   │   ├── gitea/               # Helm values
-│   │   ├── harbor/              # Helm values
-│   │   ├── argocd/              # Helm values + app-of-apps
-│   │   └── tekton/              # Pipeline build/push + Gitea triggers
+│   │   ├── gitea/
+│   │   │   └── helm-values.yaml    # Gitea 1.25.5 + PostgreSQL bundled
+│   │   ├── harbor/
+│   │   │   └── helm-values.yaml    # Harbor 2.14.3 (namespace: registry)
+│   │   ├── argocd/
+│   │   │   ├── helm-values.yaml    # ArgoCD v3.3.8
+│   │   │   └── app-of-apps.yaml
+│   │   └── tekton/
+│   │       ├── pipeline-build-push.yaml  # Pipeline Kaniko build + Harbor push
+│   │       └── trigger-gitea.yaml        # EventListener + TriggerTemplate
 │   ├── monitoring/
-│   │   ├── kube-prometheus-stack/  # Helm values
-│   │   ├── loki-stack/             # Helm values
-│   │   └── dashboards/             # ConfigMaps Grafana
+│   │   ├── kube-prometheus-stack/
+│   │   │   └── helm-values.yaml    # Prometheus + Grafana (192.168.1.210) + AlertManager
+│   │   ├── loki-stack/
+│   │   │   └── helm-values.yaml    # Loki + Promtail DaemonSet
+│   │   └── dashboards/
+│   │       └── k8s-cluster-dashboard.yaml  # ConfigMap Grafana
 │   └── apps/
-│       └── hello-lab/           # App de exemplo (nginx)
+│       └── hello-lab/
+│           ├── deployment.yaml
+│           └── service.yaml
 │
 └── scripts/
-    ├── bootstrap.sh             # Orquestra Terraform + Ansible
-    ├── k8s-bootstrap.sh         # Instala stack K8s via Helm
+    ├── bootstrap.sh             # Orquestra Terraform + Ansible (VMs)
+    ├── init-baremetal.sh        # Provisionamento inicial de hosts bare metal
+    ├── k8s-bootstrap.sh         # Instala stack K8s completa via Helm
     ├── get-kubeconfig.sh        # Copia kubeconfig do k3s-server (Linux/macOS)
     └── get-kubeconfig.ps1       # Copia kubeconfig do k3s-server (Windows/PowerShell)
 ```
@@ -90,14 +122,14 @@ infra-lab/
 ### 1. Pré-requisitos
 
 ```bash
-# Ferramentas necessárias na máquina de controle
+# Ferramentas na máquina de controle (Windows 11 + WSL Ubuntu)
 terraform >= 1.6
-ansible >= 2.15
+ansible >= 2.15   # instalado em ~/.local/bin no WSL
 helm >= 3.14
 kubectl
 
 # Collections Ansible
-ansible-galaxy collection install netbox.netbox
+ansible-galaxy collection install -r ansible/requirements.yml
 pip install pynetbox
 ```
 
@@ -105,55 +137,50 @@ pip install pynetbox
 
 ```bash
 cp terraform/proxmox/terraform.tfvars.example terraform/proxmox/terraform.tfvars
-# Editar terraform.tfvars com:
-#   proxmox_api_token_id, proxmox_api_token_secret, ssh_public_key
-#   netbox_url, netbox_token
+# Preencher: proxmox_api_token_id, proxmox_api_token_secret, ssh_public_key
+#            netbox_url, netbox_token
 
 export NETBOX_URL=http://192.168.1.72:8000
-export NETBOX_TOKEN=<token gerado em /user/api-tokens/>
+export NETBOX_TOKEN=<token em NetBox > User > API Tokens>
 ```
 
-### 3. Provisionar infraestrutura
+### 3. Provisionar VMs e configurar hosts
 
 ```bash
-# Provisiona VMs no Proxmox + registra tudo no NetBox
+# Provisiona VMs no Proxmox + registra no NetBox + instala K3s
 ./scripts/bootstrap.sh
+
+# Para hosts bare metal (notebook-i5, raspberry-pi):
+./scripts/init-baremetal.sh
 ```
 
-### 4. Obter o kubeconfig do K3s
+> **Nota WSL:** `ansible-playbook` está em `~/.local/bin`. Usar sempre heredoc para evitar
+> problemas com o `$PATH` do Windows (parênteses em `Program Files (x86)` quebram `bash -c`):
+>
+> ```bash
+> wsl -d Ubuntu -- bash << 'EOF'
+> export PATH=/home/<user>/.local/bin:/usr/local/bin:/usr/bin:/bin
+> cd /mnt/c/.../infra-lab/ansible
+> ansible-playbook -i inventory/hosts.yml playbooks/04-k3s-agents.yml \
+>   --limit 'k3s_server,raspberry-pi'
+> EOF
+> ```
 
-O arquivo `~/.kube/infra-lab.yaml` não existe no repositório — ele é gerado copiando
-`/etc/rancher/k3s/k3s.yaml` do servidor K3s e substituindo o endereço loopback pelo IP real.
-Execute este script **após** o `bootstrap.sh` do passo 3 (que instala o K3s via Ansible) e
-**antes** do `k8s-bootstrap.sh` do passo 5:
-
-**Linux / macOS:**
+### 4. Obter kubeconfig
 
 ```bash
-# Requer: chave SSH em ~/.ssh/lab_id_rsa autorizada no host labadmin@192.168.1.30
+# Linux / macOS / WSL
 ./scripts/get-kubeconfig.sh
-
-# Exportar para a sessão atual (ou adicionar ao ~/.bashrc / ~/.zshrc para persistir)
 export KUBECONFIG=~/.kube/infra-lab.yaml
 
-# Verificar nós do cluster
-kubectl get nodes -o wide
-```
-
-**Windows (PowerShell):**
-
-```powershell
-# Requer: chave SSH em ~\.ssh\lab_id_rsa autorizada no host labadmin@192.168.1.30
+# Windows PowerShell
 .\scripts\get-kubeconfig.ps1
-
-# Exportar para a sessão atual (ou adicionar ao $PROFILE para persistir)
 $env:KUBECONFIG = "$env:USERPROFILE\.kube\infra-lab.yaml"
 
-# Verificar nós do cluster
 kubectl get nodes -o wide
 ```
 
-### 5. Instalar stack Kubernetes completa
+### 5. Instalar stack Kubernetes
 
 ```bash
 export KUBECONFIG=~/.kube/infra-lab.yaml
@@ -162,20 +189,31 @@ export KUBECONFIG=~/.kube/infra-lab.yaml
 
 ### 6. Acessos após o bootstrap
 
-| Serviço | Endereço |
-|---------|----------|
-| Gitea | `http://192.168.1.200` |
-| Harbor | `https://192.168.1.201` |
-| ArgoCD | `http://192.168.1.202` |
-| Grafana | `http://192.168.1.210` |
-| NetBox | `http://192.168.1.72:8000` |
+| Serviço | Endereço | Credenciais padrão |
+| --- | --- | --- |
+| Gitea | `http://192.168.1.201` | admin / (definido na instalação) |
+| Harbor | `http://192.168.1.202` | admin / Harbor12345 |
+| ArgoCD | `http://192.168.1.203` | admin / secret `argocd-initial-admin-secret` |
+| Tekton Dashboard | `http://192.168.1.204` | — |
+| Grafana | `http://192.168.1.210` | admin / lab@admin |
+| NetBox | `http://192.168.1.72:8000` | admin / (definido na instalação) |
+
+> Credenciais completas e procedimentos de rotação em [docs/runbook.md — Seção 6](docs/runbook.md#6-acessos-e-credenciais).
+
+## Nós do cluster (estado atual)
+
+```text
+NAME              STATUS   ROLES           VERSION        INTERNAL-IP     OS
+k3s-server        Ready    control-plane   v1.29.3+k3s1   192.168.1.30    Ubuntu 22.04
+k3s-worker-cicd   Ready    <none>          v1.29.3+k3s1   192.168.1.31    Ubuntu 22.04
+ci-runner         Ready    <none>          v1.29.3+k3s1   192.168.1.32    Ubuntu 22.04
+ubuntu-neto       Ready    <none>          v1.29.3+k3s1   192.168.1.65    Ubuntu 24.04
+raspneto          Ready    <none>          v1.29.3+k3s1   192.168.1.110   Raspbian 12
+```
 
 ## Inventário dinâmico Ansible via NetBox
 
 ```bash
-# Verificar hosts detectados
 ansible-inventory -i ansible/inventory/netbox.yml --graph
-
-# Executar playbook com inventário dinâmico
 ansible-playbook -i ansible/inventory/netbox.yml ansible/playbooks/01-base-setup.yml
 ```
