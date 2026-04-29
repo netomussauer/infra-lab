@@ -242,6 +242,18 @@ else
     EXTRA_INVENTORY="-i ${INVENTORY}"
 fi
 
+# Verificar se o usuário tem sudo sem senha no host alvo.
+# Se precisar de senha (sudo -n falha), adiciona -K para o Ansible pedir interativamente.
+log_info "Verificando se ${INIT_USER} tem sudo sem senha..."
+BECOME_FLAG=""
+if ! ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
+         -i "${LAB_KEY}" -p "${SSH_PORT}" \
+         "${INIT_USER}@${HOST}" 'sudo -n true' &>/dev/null; then
+    log_warn "sudo requer senha para ${INIT_USER} — será solicitada pelo Ansible."
+    BECOME_FLAG="-K"
+fi
+
+# shellcheck disable=SC2086
 ansible-playbook \
     ${EXTRA_INVENTORY} \
     "${ANSIBLE_DIR}/playbooks/00-baremetal-init.yml" \
@@ -249,6 +261,7 @@ ansible-playbook \
     -u "${INIT_USER}" \
     --private-key "${LAB_KEY}" \
     -e "baremetal_init_user=${INIT_USER}" \
+    ${BECOME_FLAG} \
     || die "Playbook 00-baremetal-init.yml falhou."
 
 # ---------------------------------------------------------------------------
