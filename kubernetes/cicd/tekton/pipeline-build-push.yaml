@@ -56,7 +56,7 @@ spec:
   steps:
     - name: clone
       image: "alpine/git:2.43.0"
-      resources:
+      computeResources:
         requests:
           cpu: "50m"
           memory: "64Mi"
@@ -134,7 +134,7 @@ spec:
   steps:
     - name: build-and-push
       image: "gcr.io/kaniko-project/executor:v1.21.0"
-      resources:
+      computeResources:
         requests:
           cpu: "500m"
           memory: "512Mi"
@@ -218,7 +218,7 @@ spec:
   steps:
     - name: clone-manifest-repo
       image: "alpine/git:2.43.0"
-      resources:
+      computeResources:
         requests:
           cpu: "50m"
           memory: "64Mi"
@@ -237,7 +237,7 @@ spec:
 
     - name: update-image-tag
       image: "mikefarah/yq:4.40.5"
-      resources:
+      computeResources:
         requests:
           cpu: "50m"
           memory: "64Mi"
@@ -260,7 +260,7 @@ spec:
 
     - name: commit-and-push
       image: "alpine/git:2.43.0"
-      resources:
+      computeResources:
         requests:
           cpu: "50m"
           memory: "64Mi"
@@ -408,80 +408,5 @@ spec:
         - name: git-credentials
           workspace: git-credentials
 
----
-# PipelineRun: Exemplo de execução manual do pipeline
-# Usar como referência ou para testes manuais
-# Executar: kubectl apply -f - <<EOF ... EOF
-# Ou: kubectl create -f pipeline-build-push.yaml (sem name fixo para evitar conflito)
-apiVersion: tekton.dev/v1
-kind: PipelineRun
-metadata:
-  # Sem name fixo — o generateName garante unicidade
-  generateName: "build-push-run-"
-  namespace: cicd
-  labels:
-    app.kubernetes.io/name: "build-push-run"
-    app.kubernetes.io/component: "tekton-pipelinerun"
-    app.kubernetes.io/managed-by: "kubectl"
-    environment: "lab"
-    lab_id: "lab-k8s-01"
-    lab_owner: "jose.mussauer"
-spec:
-  pipelineRef:
-    name: build-and-push
-
-  params:
-    - name: source-repo-url
-      value: "http://gitea.lab.local/lab/hello-lab.git"
-    - name: source-revision
-      value: "main"
-    - name: image-name
-      value: "harbor.lab.local/lab/hello-lab"
-    - name: image-tag
-      value: "v1.0.0"
-    - name: dockerfile
-      value: "Dockerfile"
-    - name: manifest-repo-url
-      value: "http://gitea.lab.local/lab/infra-lab.git"
-    - name: manifest-path
-      value: "kubernetes/apps/hello-lab/deployment.yaml"
-
-  workspaces:
-    - name: source
-      volumeClaimTemplate:
-        spec:
-          storageClassName: "nfs-storage"
-          accessModes:
-            - ReadWriteOnce
-          resources:
-            requests:
-              storage: "1Gi"
-
-    - name: manifest-repo
-      volumeClaimTemplate:
-        spec:
-          storageClassName: "nfs-storage"
-          accessModes:
-            - ReadWriteOnce
-          resources:
-            requests:
-              storage: "500Mi"
-
-    - name: docker-credentials
-      secret:
-        secretName: "harbor-registry-secret"
-
-    - name: git-credentials
-      secret:
-        secretName: "gitea-auth-secret"
-
-  # Timeout total do PipelineRun
-  timeouts:
-    pipeline: "1h"
-    tasks: "45m"
-
-  # Rodar no node cicd
-  taskRunTemplate:
-    podTemplate:
-      nodeSelector:
-        workload: "cicd"
+# PipelineRun de exemplo: kubernetes/cicd/tekton/pipelinerun-example.yaml
+# Para disparar manualmente: kubectl create -f kubernetes/cicd/tekton/pipelinerun-example.yaml

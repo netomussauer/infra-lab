@@ -173,9 +173,6 @@ step_storage() {
     --wait \
     --timeout 5m
 
-  # Aplicar StorageClass customizada
-  kubectl apply -f "$PROJECT_ROOT/kubernetes/bootstrap/storage/nfs-storageclass.yaml"
-
   log_ok "Storage NFS configurado. StorageClass: nfs-storage (default)"
 }
 

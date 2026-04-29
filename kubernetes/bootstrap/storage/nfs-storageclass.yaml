@@ -32,9 +32,8 @@ parameters:
   # Endereço do servidor NFS
   server: "192.168.1.112"
   # Path base exportado no NAS — subdiretórios serão criados por PVC
-  share: "/k8s-pv"
-  # Montar com opções de performance/compatibilidade
-  mountOptions: "nfsvers=4.1,hard,timeo=600,retrans=2"
+  share: "/nasmussauer/k8s-pv"
+  mountOptions: "nfsvers=3,hard,timeo=600,retrans=2"
 # Retain: o PV permanece após deletar o PVC (evita perda acidental de dados no lab)
 reclaimPolicy: Retain
 # Immediate: PV é provisionado assim que o PVC é criado (sem aguardar o pod)

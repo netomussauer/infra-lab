@@ -14,12 +14,6 @@
 #   Grafana: 192.168.1.210
 # Acesso: http://192.168.1.210 | admin / lab@admin
 
-# Labels globais para todos os recursos
-commonLabels:
-  environment: "lab"
-  lab_id: "lab-k8s-01"
-  lab_owner: "jose.mussauer"
-
 # ============================================================
 # GRAFANA
 # ============================================================
@@ -60,7 +54,7 @@ grafana:
 
   persistence:
     enabled: true
-    storageClassName: "nfs-storage"
+    storageClassName: "local-path"
     accessModes:
       - ReadWriteOnce
     size: "5Gi"
@@ -175,7 +169,7 @@ prometheus:
     storageSpec:
       volumeClaimTemplate:
         spec:
-          storageClassName: "nfs-storage"
+          storageClassName: "local-path"
           accessModes:
             - ReadWriteOnce
           resources:
@@ -244,7 +238,7 @@ alertmanager:
     storage:
       volumeClaimTemplate:
         spec:
-          storageClassName: "nfs-storage"
+          storageClassName: "local-path"
           accessModes:
             - ReadWriteOnce
           resources:
@@ -318,12 +312,6 @@ prometheus-node-exporter:
   extraArgs:
     - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+|var/lib/kubelet/.+)($|/)
     - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$
-
-  podLabels:
-    app.kubernetes.io/name: "node-exporter"
-    environment: "lab"
-    lab_id: "lab-k8s-01"
-    lab_owner: "jose.mussauer"
 
 # ============================================================
 # KUBE-STATE-METRICS

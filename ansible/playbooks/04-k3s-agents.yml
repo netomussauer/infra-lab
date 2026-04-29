@@ -135,7 +135,7 @@
     - name: Aguardar nó worker ficar Ready no cluster (até 2 minutos)
       ansible.builtin.command:
         cmd: >
-          k3s kubectl wait node/{{ inventory_hostname }}
+          k3s kubectl wait node/{{ ansible_hostname }}
           --for=condition=Ready
           --timeout={{ k3s_agent_ready_timeout }}s
       delegate_to: "{{ groups['k3s_server'][0] }}"
@@ -153,7 +153,7 @@
     - name: Aplicar label do nó no cluster
       ansible.builtin.command:
         cmd: >
-          k3s kubectl label node {{ inventory_hostname }}
+          k3s kubectl label node {{ ansible_hostname }}
           {{ k3s_node_label }}
           --overwrite
       delegate_to: "{{ groups['k3s_server'][0] }}"

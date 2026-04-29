@@ -39,31 +39,31 @@ harborAdminPassword: "Harbor12345!"
 # Chave secreta para encrypt de dados (16, 32 ou 64 chars)
 secretKey: "labsecretkey1234"
 
-# Persistência — todos os volumes via nfs-storage
+# Persistência — todos os volumes via local-path
 persistence:
   enabled: true
   resourcePolicy: "keep"
 
   persistentVolumeClaim:
     registry:
-      storageClass: "nfs-storage"
+      storageClass: "local-path"
       accessMode: ReadWriteOnce
       size: "50Gi"
     jobservice:
       jobLog:
-        storageClass: "nfs-storage"
+        storageClass: "local-path"
         accessMode: ReadWriteOnce
         size: "2Gi"
     database:
-      storageClass: "nfs-storage"
+      storageClass: "local-path"
       accessMode: ReadWriteOnce
       size: "5Gi"
     redis:
-      storageClass: "nfs-storage"
+      storageClass: "local-path"
       accessMode: ReadWriteOnce
       size: "2Gi"
     trivy:
-      storageClass: "nfs-storage"
+      storageClass: "local-path"
       accessMode: ReadWriteOnce
       size: "5Gi"
 

@@ -102,6 +102,27 @@ roleRef:
   name: tekton-triggers-eventlistener-roles
 
 ---
+# ClusterRoleBinding para acesso a recursos cluster-scoped (ClusterInterceptors, ClusterTriggerBindings)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tekton-triggers-cicd-clusterinterceptors
+  labels:
+    app.kubernetes.io/name: "tekton-triggers-clusterinterceptors"
+    app.kubernetes.io/component: "tekton-triggers"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+subjects:
+  - kind: ServiceAccount
+    name: tekton-triggers-sa
+    namespace: cicd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: tekton-triggers-eventlistener-clusterroles
+
+---
 # TriggerBinding: extrai parâmetros do payload JSON do webhook Gitea
 # Gitea push event payload reference:
 # https://gitea.io/api/1.1/#tag/issue/operation/issueGetMilestone
@@ -207,7 +228,7 @@ spec:
           - name: source
             volumeClaimTemplate:
               spec:
-                storageClassName: "nfs-storage"
+                storageClassName: "local-path"
                 accessModes:
                   - ReadWriteOnce
                 resources:
@@ -216,7 +237,7 @@ spec:
           - name: manifest-repo
             volumeClaimTemplate:
               spec:
-                storageClassName: "nfs-storage"
+                storageClassName: "local-path"
                 accessModes:
                   - ReadWriteOnce
                 resources:
@@ -305,14 +326,6 @@ spec:
       replicas: 1
       spec:
         template:
-          metadata:
-            labels:
-              app.kubernetes.io/name: "gitea-event-listener"
-              app.kubernetes.io/component: "tekton-triggers"
-              app.kubernetes.io/managed-by: "kubectl"
-              environment: "lab"
-              lab_id: "lab-k8s-01"
-              lab_owner: "jose.mussauer"
           spec:
             nodeSelector:
               workload: "cicd"
@@ -323,8 +336,7 @@ spec:
               runAsGroup: 65532
               fsGroup: 65532
             containers:
-              - name: event-listener
-                securityContext:
+              - securityContext:
                   allowPrivilegeEscalation: false
                   readOnlyRootFilesystem: true
                   capabilities:

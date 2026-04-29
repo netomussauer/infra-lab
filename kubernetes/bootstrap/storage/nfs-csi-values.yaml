@@ -14,10 +14,9 @@
 
 nfs:
   server: "192.168.1.112"
-  path: "/k8s-pv"
-  # Montar com NFSv4.1 para melhor compatibilidade e performance
+  path: "/nasmussauer/k8s-pv"
   mountOptions:
-    - nfsvers=4.1
+    - nfsvers=3
     - hard
     - timeo=600
     - retrans=2

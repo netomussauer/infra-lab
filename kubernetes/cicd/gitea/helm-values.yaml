@@ -17,9 +17,11 @@
 replicaCount: 1
 
 image:
+  registry: ""
   repository: gitea/gitea
-  tag: "1.21"
+  tag: "1.25.5"
   pullPolicy: IfNotPresent
+  rootless: false
 
 # Garantir que rode no node correto
 nodeSelector:
@@ -43,21 +45,18 @@ service:
   http:
     type: LoadBalancer
     port: 3000
-    # IP fixo no pool MetalLB
     loadBalancerIP: "192.168.1.201"
     annotations:
       metallb.universe.tf/address-pool: "lab-pool"
   ssh:
-    type: LoadBalancer
+    type: NodePort
     port: 22
-    loadBalancerIP: "192.168.1.201"
-    annotations:
-      metallb.universe.tf/address-pool: "lab-pool"
+    nodePort: 30022
 
-# Persistência via NFS
+# Persistência via local-path (NFS com root_squash não suporta chown de init containers)
 persistence:
   enabled: true
-  storageClass: "nfs-storage"
+  storageClass: "local-path"
   size: "20Gi"
   accessModes:
     - ReadWriteOnce
@@ -83,8 +82,11 @@ gitea:
       LFS_START_SERVER: true
 
     database:
-      DB_TYPE: "sqlite3"
-      PATH: "/data/gitea/gitea.db"
+      DB_TYPE: "postgres"
+      HOST: "gitea-postgresql:5432"
+      NAME: "gitea"
+      USER: "gitea"
+      PASSWD: "gitea123"
 
     repository:
       DEFAULT_PRIVATE: false
@@ -140,9 +142,22 @@ gitea:
     failureThreshold: 30
     periodSeconds: 10
 
-# Desabilitar PostgreSQL e MySQL bundled (usando SQLite3)
+# PostgreSQL bundled — suportado nativamente pelo chart v12
 postgresql:
-  enabled: false
+  enabled: true
+  global:
+    postgresql:
+      auth:
+        username: "gitea"
+        password: "gitea123"
+        database: "gitea"
+  primary:
+    persistence:
+      enabled: true
+      storageClass: "local-path"
+      size: "5Gi"
+    nodeSelector:
+      workload: "cicd"
 
 postgresql-ha:
   enabled: false
@@ -150,11 +165,17 @@ postgresql-ha:
 mysql:
   enabled: false
 
-# Redis para cache (opcional no lab — usando memória)
+# Desabilitar cache distribuído (usando memória e file session)
 redis-cluster:
   enabled: false
 
 redis:
+  enabled: false
+
+valkey-cluster:
+  enabled: false
+
+valkey:
   enabled: false
 
 # Init containers para setup
@@ -168,27 +189,17 @@ podAnnotations:
 
 podLabels:
   app.kubernetes.io/name: "gitea"
-  app.kubernetes.io/version: "1.21"
+  app.kubernetes.io/version: "1.25.5"
   app.kubernetes.io/component: "git-server"
   app.kubernetes.io/managed-by: "helm"
   environment: "lab"
   lab_id: "lab-k8s-01"
   lab_owner: "jose.mussauer"
 
-# SecurityContext
-# runAsUser: 1000 (git user no container Gitea) — UID 1000 nao e root, portanto
-# runAsNonRoot: true e correto e deve ser mantido.
-securityContext:
-  runAsNonRoot: true
-  runAsUser: 1000
-  runAsGroup: 1000
+# podSecurityContext: fsGroup garante que o volume seja acessível ao UID 1000.
+# containerSecurityContext vazio: init containers rodam como root (necessário para chown),
+# o main container usa o USER da imagem (git, UID 1000).
+podSecurityContext:
   fsGroup: 1000
 
-containerSecurityContext:
-  runAsNonRoot: true
-  runAsUser: 1000
-  runAsGroup: 1000
-  allowPrivilegeEscalation: false
-  capabilities:
-    drop:
-      - ALL
+containerSecurityContext: {}
