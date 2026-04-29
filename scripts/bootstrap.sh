@@ -217,20 +217,40 @@ run_playbook() {
         "${ANSIBLE_DIR}/playbooks/${playbook}" \
         || log_warn "ansible-lint reportou avisos em ${playbook}. Verifique antes de produção."
 
+    local ansible_rc=0
     if [[ "${DRY_RUN}" == "true" ]]; then
         log_info "Modo dry-run — executando ${playbook} com --check --diff..."
+        set +e
         ansible-playbook \
             -i "${INVENTORY}" \
             "${ANSIBLE_DIR}/playbooks/${playbook}" \
             --check --diff \
             --private-key "${HOME}/.ssh/lab_id_rsa"
+        ansible_rc=$?
+        set -e
     else
         log_info "Executando ${playbook}..."
+        set +e
         ansible-playbook \
             -i "${INVENTORY}" \
             "${ANSIBLE_DIR}/playbooks/${playbook}" \
             --private-key "${HOME}/.ssh/lab_id_rsa"
+        ansible_rc=$?
+        set -e
+    fi
+
+    # Código 0 = sucesso total.
+    # Código 2 = falhas em alguns hosts (bare metal offline contam como failure no recap).
+    # Código 4 = hosts inacessíveis.
+    # Ambos os casos parciais são tratados como aviso — o output do Ansible acima mostra
+    # o resultado por host, permitindo verificar se as VMs do cluster tiveram sucesso.
+    # Qualquer outro código = erro de configuração/sintaxe: aborta.
+    if [[ "${ansible_rc}" -eq 0 ]]; then
         log_ok "${description} concluído"
+    elif [[ "${ansible_rc}" -eq 2 || "${ansible_rc}" -eq 4 ]]; then
+        log_warn "${description} concluído com falhas parciais (verifique PLAY RECAP acima)"
+    else
+        die "Playbook ${playbook} falhou com código ${ansible_rc}"
     fi
 }
 

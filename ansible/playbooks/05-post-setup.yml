@@ -125,10 +125,7 @@
 
     - name: Verificar labels aplicados no control-plane
       ansible.builtin.command:
-        cmd: >
-          k3s kubectl get node {{ inventory_hostname }}
-          --show-labels
-          -o custom-columns=NAME:.metadata.name,LABELS:.metadata.labels
+        cmd: k3s kubectl get node {{ inventory_hostname }} --show-labels
       register: server_labels
       changed_when: false
       tags: [k3s, labels, verify]
