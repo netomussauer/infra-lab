@@ -43,7 +43,7 @@ Laboratório completo de infraestrutura home-lab com cluster Kubernetes K3s mult
 
 ## Estrutura do repositório
 
-```
+```text
 infra-lab/
 ├── docs/
 │   ├── architecture.md          # Topologia, hardware, cluster — leia primeiro
@@ -191,7 +191,7 @@ export KUBECONFIG=~/.kube/infra-lab.yaml
 
 | Serviço | Endereço | Credenciais padrão |
 | --- | --- | --- |
-| Gitea | `http://192.168.1.201` | admin / (definido na instalação) |
+| Gitea | `http://192.168.1.201:3000` | admin / (definido na instalação) |
 | Harbor | `http://192.168.1.202` | admin / Harbor12345! |
 | ArgoCD | `http://192.168.1.203` | admin / secret `argocd-initial-admin-secret` |
 | Tekton Dashboard | `http://192.168.1.204` | — |

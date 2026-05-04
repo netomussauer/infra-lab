@@ -296,7 +296,7 @@ kubectl create secret generic gitea-webhook-secret \
 
 Após `step_tekton`:
 
-1. Acessar Gitea: `http://192.168.1.201` (ou `http://gitea.lab.local`)
+1. Acessar Gitea: `http://192.168.1.201:3000` (ou `http://gitea.lab.local:3000`)
 2. No repositório da aplicação → Settings → Webhooks → Add Webhook → Gitea
 3. Preencher:
    - **URL:** `http://192.168.1.204`
@@ -492,7 +492,7 @@ kubectl delete pipelinerun -n cicd \
 
 | Serviço | URL | Usuário | Senha padrão |
 |---|---|---|---|
-| Gitea | `http://192.168.1.201` | `labadmin` | `labadmin123!` |
+| Gitea | `http://192.168.1.201:3000` | `labadmin` | `labadmin123!` |
 | Harbor | `http://192.168.1.202` | `admin` | `Harbor12345!` |
 | ArgoCD | `http://192.168.1.203` | `admin` | ver secret abaixo |
 | Grafana | `http://192.168.1.210` | `admin` | `lab@admin` |
