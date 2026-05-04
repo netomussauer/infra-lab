@@ -12,7 +12,7 @@
 #
 # IP MetalLB alocado: 192.168.1.202
 # Acesso: https://harbor.lab.local ou http://192.168.1.202
-# Credenciais padrão: admin / Harbor12345 (alterar no primeiro login)
+# Credenciais padrão: admin / Harbor12345! (alterar no primeiro login)
 
 externalURL: "https://harbor.lab.local"
 
