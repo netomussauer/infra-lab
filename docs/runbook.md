@@ -499,6 +499,30 @@ kubectl delete pipelinerun -n cicd \
 | Proxmox | `https://192.168.1.20:8006` | `root` | definido na instalação |
 | NetBox | `http://192.168.1.72:8000` | `admin` | definido na instalação |
 
+### Bancos de dados compartilhados (namespace `shared-infra`)
+
+| Banco | Host interno | Porta | Database | Usuário | Senha padrão |
+| --- | --- | --- | --- | --- | --- |
+| PostgreSQL 16 | `postgresql.shared-infra.svc.cluster.local` | `5432` | `realtpmsys` | `realtpmsys` | `realtpmsys123!` |
+| PostgreSQL 16 | `postgresql.shared-infra.svc.cluster.local` | `5432` | `amfit` | `amfit` | `amfit123!` |
+| PostgreSQL 16 | `postgresql.shared-infra.svc.cluster.local` | `5432` | `postgres` | `postgres` | `postgres123!` |
+| Redis 7 | `redis.shared-infra.svc.cluster.local` | `6379` | — | — | `redis123!` |
+
+```bash
+# Acessar PostgreSQL via kubectl exec:
+kubectl exec -n shared-infra postgresql-0 -- psql -U postgres
+
+# String de conexão para aplicações Go (exemplo):
+# postgres://realtpmsys:realtpmsys123!@postgresql.shared-infra.svc.cluster.local:5432/realtpmsys?sslmode=disable
+# postgres://amfit:amfit123!@postgresql.shared-infra.svc.cluster.local:5432/amfit?sslmode=disable
+
+# Acessar Redis via kubectl exec:
+kubectl exec -n shared-infra redis-0 -- redis-cli -a redis123! ping
+
+# String de conexão Redis (exemplo):
+# redis://:redis123!@redis.shared-infra.svc.cluster.local:6379/0
+```
+
 ```bash
 # Senha inicial do ArgoCD:
 kubectl -n cicd get secret argocd-initial-admin-secret \

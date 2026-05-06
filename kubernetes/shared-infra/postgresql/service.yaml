@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql
+  namespace: shared-infra
+  labels:
+    app.kubernetes.io/name: "postgresql"
+    app.kubernetes.io/version: "16"
+    app.kubernetes.io/component: "database"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: "postgresql"
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+      protocol: TCP

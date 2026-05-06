@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+  namespace: shared-infra
+  labels:
+    app.kubernetes.io/name: "redis"
+    app.kubernetes.io/version: "7"
+    app.kubernetes.io/component: "cache"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+data:
+  redis.conf: |
+    # Password is injected via --requirepass flag in the container command
+    # to avoid storing it in plaintext inside the ConfigMap.
+
+    maxmemory 200mb
+    maxmemory-policy allkeys-lru
+
+    # AOF persistence
+    appendonly yes
+    appendfsync everysec
+
+    # RDB snapshots (kept as safety net alongside AOF)
+    save 900 1
+    save 300 10
+    save 60 10000
+
+    # Bind to all interfaces inside the pod
+    bind 0.0.0.0
+
+    # Disable protected-mode since auth is enforced via requirepass
+    protected-mode no

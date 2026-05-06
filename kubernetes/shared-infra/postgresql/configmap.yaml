@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgresql-initdb
+  namespace: shared-infra
+  labels:
+    app.kubernetes.io/name: "postgresql"
+    app.kubernetes.io/version: "16"
+    app.kubernetes.io/component: "database"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+data:
+  01-init-users-databases.sh: |
+    #!/bin/bash
+    set -euo pipefail
+
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "postgres" <<-EOSQL
+      -- realtpmsys
+      CREATE USER realtpmsys WITH PASSWORD '${REALTPMSYS_PASSWORD}';
+      CREATE DATABASE realtpmsys OWNER realtpmsys;
+
+      -- amfit
+      CREATE USER amfit WITH PASSWORD '${AMFIT_PASSWORD}';
+      CREATE DATABASE amfit OWNER amfit;
+    EOSQL
+
+    # Revoke public schema access for realtpmsys database
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "realtpmsys" <<-EOSQL
+      REVOKE ALL ON SCHEMA public FROM PUBLIC;
+      GRANT ALL ON SCHEMA public TO realtpmsys;
+    EOSQL
+
+    # Revoke public schema access for amfit database
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "amfit" <<-EOSQL
+      REVOKE ALL ON SCHEMA public FROM PUBLIC;
+      GRANT ALL ON SCHEMA public TO amfit;
+    EOSQL
