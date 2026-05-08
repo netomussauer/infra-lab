@@ -16,6 +16,31 @@
 # Número de réplicas — 1 para SQLite (sem suporte a multi-replica com SQLite)
 replicaCount: 1
 
+# Strategy Recreate: 1 réplica + PVC RWO + LevelDB lock em /data/queues/common
+# torna RollingUpdate impossível (novo pod não consegue inicializar enquanto o
+# antigo ainda segura o lock). Recreate garante kill antes de start.
+strategy:
+  type: Recreate
+  rollingUpdate: null
+
+# Workaround do bug do musl libc no getaddrinfo() — com ndots:5 (default K8s) +
+# múltiplos search domains, queries a hosts externos como github.com falham
+# silenciosamente. Sintoma: `getent hosts` exit 2; `git ls-remote` "Could not
+# resolve host". Ver Bug #1 em amfit/infra/cluster/LAB-BUGS.md.
+# Fix: ndots:1 + single-request-reopen.
+dnsPolicy: None
+dnsConfig:
+  nameservers:
+    - 10.43.0.10
+  searches:
+    - cicd.svc.cluster.local
+    - svc.cluster.local
+    - cluster.local
+  options:
+    - name: ndots
+      value: "1"
+    - name: single-request-reopen
+
 image:
   registry: ""
   repository: gitea/gitea

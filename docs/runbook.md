@@ -926,3 +926,107 @@ fatal: [raspberry-pi]: FAILED! => {"msg": "The task includes an option with an u
 ansible-playbook -i inventory/hosts.yml playbooks/04-k3s-agents.yml \
   --limit 'k3s_server,raspberry-pi'
 ```
+
+---
+
+### P20: musl libc — `getaddrinfo` falha em pods Alpine (Gitea, apk update, etc)
+
+**Sintoma:**
+
+- `getent hosts github.com` retorna exit code 2 sem output em pod Alpine/musl
+- `git ls-remote https://github.com/...` falha com `Could not resolve host`
+- `apk update` falha com `temporary error (try again later)` em pods Alpine
+- `nslookup` (busybox) **funciona** porque usa `/etc/resolv.conf` direto, sem `getaddrinfo()`
+
+**Causa:** musl libc tem comportamento bugado no `getaddrinfo()` quando combinado com `options ndots:5` (default do Kubernetes), múltiplos search domains, e queries paralelas A + AAAA contra CoreDNS. Documentado em <https://github.com/gliderlabs/docker-alpine/issues/8>.
+
+**Diagnóstico:**
+
+```bash
+# Pod Alpine no cluster
+kubectl exec -n cicd <pod> -c <container> -- sh -c '
+  echo "--- nslookup (deve funcionar)"
+  nslookup github.com
+  echo "--- getent (DEVE FALHAR antes do fix)"
+  getent hosts github.com
+'
+```
+
+**Solução:** adicionar `dnsConfig` com `ndots:1` e `single-request-reopen` ao Deployment Alpine (Gitea v1.25.5 e qualquer outro pod Alpine futuro). No helm-values do Gitea (`kubernetes/cicd/gitea/helm-values.yaml`):
+
+```yaml
+dnsPolicy: None
+dnsConfig:
+  nameservers:
+    - 10.43.0.10           # Service IP do CoreDNS
+  searches:
+    - cicd.svc.cluster.local
+    - svc.cluster.local
+    - cluster.local
+  options:
+    - name: ndots
+      value: "1"           # default era 5, força queries de hostnames "puros"
+    - name: single-request-reopen   # evita race A/AAAA do musl
+```
+
+Para outros pods Alpine ad-hoc, aplicar o mesmo bloco em `spec.template.spec` (Deployment) ou `spec` (Pod).
+
+---
+
+### P21: Gitea — `Recreate` strategy obrigatória com 1 réplica + LevelDB
+
+**Sintoma:** ao fazer `kubectl rollout` ou `helm upgrade` no Gitea, o novo pod fica em `CrashLoopBackOff` com erro:
+
+```text
+Failed to create queue "notification-service":
+unable to lock level db at /data/queues/common: resource temporarily unavailable
+```
+
+**Causa:** `replicaCount: 1` + `strategy: RollingUpdate` (default) faz com que o novo pod tente iniciar **antes** do antigo terminar. Como o PVC é `ReadWriteOnce` e ambos os pods são agendados no mesmo nó (`k3s-worker-cicd`), eles montam o mesmo volume — e o LevelDB em `/data/queues/common` só permite um único processo segurando o lock.
+
+**Solução:** definir `strategy.type: Recreate` no helm-values:
+
+```yaml
+strategy:
+  type: Recreate
+  rollingUpdate: null
+```
+
+Aceita um pequeno blip de indisponibilidade (~30s) durante upgrades, mas elimina o crash loop.
+
+---
+
+### P22: CoreDNS pinned em k3s-server por imagem ausente nos workers
+
+**Sintoma:** após `kubectl rollout restart deployment/coredns -n kube-system`, novo pod fica em `ImagePullBackOff` em outros nós. Apenas `k3s-server` tem a imagem `rancher/mirrored-coredns-coredns:1.10.1` cacheada.
+
+**Workaround temporário (anti-pattern):**
+
+```bash
+kubectl patch deploy coredns -n kube-system --type=strategic \
+  -p '{"spec":{"template":{"spec":{"nodeSelector":{"kubernetes.io/hostname":"k3s-server"}}}}}'
+```
+
+**Solução definitiva:**
+
+1. Pre-pull da imagem em todos os nós workers:
+
+   ```bash
+   for IP in 192.168.1.31 192.168.1.32 192.168.1.65 192.168.1.110; do
+     ssh -i ~/.ssh/lab_id_rsa labadmin@$IP \
+       "sudo crictl pull rancher/mirrored-coredns-coredns:1.10.1"
+   done
+   ```
+
+1. Remover o nodeSelector custom:
+
+   ```bash
+   kubectl patch deploy coredns -n kube-system --type=json \
+     -p='[{"op":"remove","path":"/spec/template/spec/nodeSelector/kubernetes.io~1hostname"}]'
+   ```
+
+1. Escalar para 2 réplicas (HA real):
+
+   ```bash
+   kubectl scale deploy coredns -n kube-system --replicas=2
+   ```
