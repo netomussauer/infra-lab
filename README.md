@@ -76,7 +76,8 @@ infra-lab/
 │   │   ├── 02-nfs-mounts.yml       # Monta NFS shares do NAS
 │   │   ├── 03-k3s-server.yml       # Instala K3s control-plane
 │   │   ├── 04-k3s-agents.yml       # Junta workers ao cluster
-│   │   └── 05-post-setup.yml       # Labels, taints, verificação final
+│   │   ├── 05-post-setup.yml       # Labels, taints, verificação final
+│   │   └── 06-internal-dns.yml     # Configura Pi-hole (.53) como DNS primário dos nós
 │   └── requirements.yml
 │
 ├── kubernetes/
@@ -106,6 +107,26 @@ infra-lab/
 │   │   │   └── helm-values.yaml    # Loki + Promtail DaemonSet
 │   │   └── dashboards/
 │   │       └── k8s-cluster-dashboard.yaml  # ConfigMap Grafana
+│   ├── shared-infra/                # Bancos compartilhados entre projetos
+│   │   ├── namespace.yaml
+│   │   ├── postgresql/              # PostgreSQL 16 — databases realtpmsys, amfit
+│   │   │   ├── secret.yaml
+│   │   │   ├── configmap.yaml       # initdb scripts
+│   │   │   ├── statefulset.yaml
+│   │   │   └── service.yaml
+│   │   └── redis/                   # Redis 7 — cache + sessões
+│   │       ├── secret.yaml
+│   │       ├── configmap.yaml       # redis.conf
+│   │       ├── statefulset.yaml
+│   │       └── service.yaml
+│   ├── network-services/            # Serviços de rede do lab
+│   │   ├── namespace.yaml
+│   │   ├── metallb-pool.yaml        # infra-services-pool (192.168.1.50-59)
+│   │   └── pihole/                  # Pi-hole DNS + filtro de ads (192.168.1.53)
+│   │       ├── secret.yaml
+│   │       ├── configmap-records.yaml
+│   │       ├── deployment.yaml
+│   │       └── service.yaml
 │   └── apps/
 │       └── hello-lab/
 │           ├── deployment.yaml

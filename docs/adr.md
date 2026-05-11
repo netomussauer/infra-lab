@@ -21,6 +21,7 @@ Cada ADR documenta uma decisão de design tomada neste projeto: o contexto que l
 | [ADR-007](#adr-007) | NetBox como IPAM centralizado | Aceito |
 | [ADR-008](#adr-008) | PostgreSQL para o Gitea em vez de SQLite | Aceito |
 | [ADR-009](#adr-009) | NFSv3 para montagens de host — NAS Seagate Black Armor | Aceito |
+| [ADR-010](#adr-010) | Pi-hole como DNS interno do lab (vs dnsmasq, CoreDNS, VM dedicada) | Aceito |
 
 ---
 
@@ -300,3 +301,48 @@ O NAS é um Seagate Black Armor 2-Bay. Esse modelo foi descontinuado e suporta a
 - NFSv3 não suporta locking integrado ao protocolo (usa `lockd` separado). Aceitável para o uso de backup e storage auxiliar.
 - Performance do NFSv3 é comparável ao v4 para leitura sequencial de arquivos grandes (workloads do lab).
 - Qualquer upgrade de NAS no futuro para um modelo que suporte NFSv4 exigirá reverter `nfsvers=3` para `nfsvers=4` nas configurações.
+
+---
+
+## ADR-010
+
+**Título:** Pi-hole como DNS interno do lab (vs dnsmasq, CoreDNS standalone, VM dedicada)
+
+**Status:** Aceito
+
+**Contexto:**
+
+A entrega do projeto AMFIT revelou que o `containerd` em cada nó do K3s não usa o CoreDNS do cluster — usa o resolver do próprio nó. Quando o build via Tekton/Kaniko faz push de uma imagem para `harbor.lab.local`, e em seguida o ArgoCD tenta deployar essa imagem, o pull pelo container runtime falha com `lookup harbor.lab.local: Try again` (ver `amfit/infra/cluster/PENDING.md` item #1).
+
+Para resolver, é necessário um DNS na LAN que entenda os nomes internos do lab (`*.lab.local`, `*.infra.local`, `*.amfit.local`) e que os nós usem esse DNS no `/etc/resolv.conf` do host.
+
+**Alternativas consideradas:**
+
+| Critério | Pi-hole | dnsmasq | CoreDNS standalone | VM dedicada |
+| --- | --- | --- | --- | --- |
+| UI web para gestão | Sim (excelente) | Não | Não | depende da imagem |
+| Filtro de ads para a LAN | Sim (bônus) | Não | Não | depende |
+| Registros A/CNAME custom | Via UI ou arquivo | Apenas arquivo | Apenas Corefile | varia |
+| RAM idle | ~256 Mi | ~30 Mi | ~64 Mi | ~512 Mi (VM completa) |
+| Métricas Prometheus | Sim (exporter oficial) | Requer adaptador | Nativo | varia |
+| Manutenibilidade | Alta (interface familiar) | Baixa (editar YAML) | Média | Alta |
+| Resiliência (cluster down → DNS down) | sim | sim | sim | não — VM separada |
+
+**Decisão:** Pi-hole `2024.07.0` deployado como Deployment K3s no namespace `network-services`, exposto via MetalLB em `192.168.1.53` (pool `infra-services-pool`).
+
+**Justificativa:**
+
+- A UI web do Pi-hole acelera operação em ambiente de lab — adicionar um registro CNAME via interface é mais ergonômico que editar Corefile/dnsmasq.conf e fazer rollout.
+- O bloqueio de ads no LAN é benefício colateral relevante (todos os dispositivos da casa via DHCP).
+- O custo de RAM (~256 Mi) é absorvido pelo nó `ubuntu-neto` que tem ~5 GB de margem após Prometheus + Loki + PostgreSQL + Redis.
+- Manter no cluster (vs VM dedicada) evita criar uma nova VM no Proxmox que já está em 16/16 GB de RAM alocada.
+
+**Resiliência:** o `systemd-resolved`/NetworkManager dos nós tem `FallbackDNS=1.1.1.1 8.8.8.8`. Se o Pi-hole cair, resolução externa (image pulls do Docker Hub, apt-get, etc.) continua funcionando — apenas nomes internos `*.lab.local` ficam indisponíveis até o pod voltar.
+
+**Consequências:**
+
+- Novo pool MetalLB `infra-services-pool` (`192.168.1.50-59`, `autoAssign=false`) — reservado para serviços de infraestrutura que precisam de IPs estáveis fora do range de workloads.
+- Playbook Ansible `06-internal-dns.yml` configura `systemd-resolved` (Ubuntu) e `NetworkManager` (Raspbian) nos 5 nós para usar Pi-hole como DNS primário.
+- Registros customizados estão em `kubernetes/network-services/pihole/configmap-records.yaml` (formato dnsmasq `address=/host/IP`) — mudanças exigem `kubectl apply` + `kubectl rollout restart deployment/pihole`.
+- Senha do admin: secret `pihole-admin` no namespace `network-services` — alterar em produção real.
+- O Pi-hole roda em um único nó (`ubuntu-neto`) com `strategy: Recreate` — durante upgrade há ~30s de indisponibilidade de DNS. Aceitável pelo fallback configurado.

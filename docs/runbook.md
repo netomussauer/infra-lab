@@ -266,6 +266,9 @@ bash scripts/k8s-bootstrap.sh step_monitoring
 | `step_tekton` | Instala Tekton Pipelines + Triggers + Pipeline `build-and-push` | Cluster, secrets pré-criados |
 | `step_monitoring` | Instala kube-prometheus-stack (requer nó `workload=monitoring`) | Nó ubuntu-neto no cluster |
 | `step_loki` | Instala Loki Stack | Monitoring namespace |
+| `step_shared_infra` | Instala PostgreSQL 16 + Redis 7 compartilhados (ns `shared-infra`) | Nó ubuntu-neto no cluster |
+| `step_pihole` | Instala Pi-hole + pool MetalLB `infra-services-pool` (ns `network-services`) | MetalLB, nó ubuntu-neto |
+| `step_internal_dns` | Aplica playbook Ansible que reconfigura DNS dos nós (Pi-hole primário) | `step_pihole` |
 | `step_hello_lab` | Deploy da aplicação de exemplo | Cluster running |
 
 ### 4.4 Secrets obrigatórios antes do Tekton
@@ -310,15 +313,74 @@ kubectl get secret -n cicd gitea-webhook-secret \
   -o jsonpath='{.data.secretToken}' | base64 -d
 ```
 
-### 4.6 Configurar /etc/hosts (ou DNS local)
+### 4.6 DNS interno do lab (Pi-hole)
 
-Para acesso pelos nomes de domínio `.lab.local`:
+A partir de 2026-05-11, o lab tem **Pi-hole** rodando no cluster em `192.168.1.53` servindo DNS para a LAN inteira. Todos os 5 nós já estão configurados para usar Pi-hole como DNS primário via playbook `ansible/playbooks/06-internal-dns.yml`.
 
-```
+**Registros disponíveis (gerenciados via `kubernetes/network-services/pihole/configmap-records.yaml`):**
+
+| Hostname | IP |
+| --- | --- |
+| `gitea.lab.local` | 192.168.1.201 |
+| `harbor.lab.local` / `harbor.infra.local` | 192.168.1.202 |
+| `argocd.lab.local` | 192.168.1.203 |
+| `tekton.lab.local` | 192.168.1.204 |
+| `grafana.lab.local` | 192.168.1.210 |
+| `pihole.lab.local` | 192.168.1.53 |
+| `proxmox.lab.local` | 192.168.1.20 |
+| `*.amfit.local` | 192.168.1.205/206/207 (reserva) |
+
+**Para máquinas fora do cluster** (PCs, celulares, dev WSL):
+
+- Configurar a máquina para usar `192.168.1.53` como DNS primário, **ou**
+- Configurar o roteador para distribuir `192.168.1.53` via DHCP, **ou**
+- Adicionar entradas manuais em `/etc/hosts` (fallback):
+
+```text
+192.168.1.53   pihole.lab.local
 192.168.1.201  gitea.lab.local
 192.168.1.202  harbor.lab.local
 192.168.1.203  argocd.lab.local
 192.168.1.210  grafana.lab.local
+```
+
+**Adicionar/remover registro DNS no Pi-hole:**
+
+```bash
+# 1. Editar ConfigMap
+vi kubernetes/network-services/pihole/configmap-records.yaml
+
+# 2. Aplicar
+kubectl apply -f kubernetes/network-services/pihole/configmap-records.yaml
+
+# 3. Forçar reload do dnsmasq (rollout do pod)
+kubectl rollout restart deployment/pihole -n network-services
+
+# 4. Validar
+nslookup novo-host.lab.local 192.168.1.53
+```
+
+**Reconfigurar DNS de um nó manualmente** (caso o playbook 06 não tenha rodado):
+
+```bash
+# Ubuntu (systemd-resolved)
+sudo tee /etc/systemd/resolved.conf.d/lab-dns.conf <<EOF
+[Resolve]
+DNS=192.168.1.53
+FallbackDNS=1.1.1.1 8.8.8.8
+Domains=lab.local infra.local amfit.local
+EOF
+sudo systemctl restart systemd-resolved
+
+# Raspbian (NetworkManager)
+sudo tee /etc/NetworkManager/conf.d/lab-dns.conf <<EOF
+[global-dns-domain-*]
+servers=192.168.1.53,1.1.1.1,8.8.8.8
+
+[global-dns]
+searches=lab.local,infra.local,amfit.local
+EOF
+sudo systemctl restart NetworkManager
 ```
 
 ---

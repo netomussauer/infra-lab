@@ -84,7 +84,7 @@ flowchart TD
         end
 
         subgraph I5["notebook-i5 — Intel i5-2450M | 8GB | 192.168.1.65"]
-            K3S_I5["k3s agent — hostname: ubuntu-neto\nworkload=monitoring\nPrometheus | Grafana | Loki | AlertManager"]
+            K3S_I5["k3s agent — hostname: ubuntu-neto\nworkload=monitoring\nPrometheus | Grafana | Loki | AlertManager\nPostgreSQL | Redis | Pi-hole"]
         end
 
         subgraph RPI["raspberry-pi — ARMv7 | 1GB | 192.168.1.110"]
@@ -146,6 +146,9 @@ flowchart TD
             LOKI["Loki"]
             ALERT["AlertManager"]
             KSM["kube-state-metrics"]
+            PG["PostgreSQL 16\n(shared-infra)"]
+            REDIS["Redis 7\n(shared-infra)"]
+            PIHOLE["Pi-hole\n(network-services)\n192.168.1.53"]
         end
 
         subgraph EDGE["raspneto — workload=edge | arch=arm"]
@@ -170,9 +173,12 @@ flowchart TD
 | CNI | Flannel (VXLAN — padrão K3s) |
 | Pod CIDR | `10.42.0.0/16` |
 | Service CIDR | `10.43.0.0/16` |
-| DNS Cluster | `10.43.0.10` (CoreDNS) |
+| DNS Cluster | `10.43.0.10` (CoreDNS — 2 réplicas) |
+| DNS LAN | `192.168.1.53` (Pi-hole — primário nos 5 nós) |
 | Ingress | Traefik v2 (embutido no K3s) |
-| LoadBalancer | MetalLB v0.14.3 — L2 mode (ARP) — pool `192.168.1.200–192.168.1.220` |
+| LoadBalancer | MetalLB v0.14.3 — L2 mode (ARP) — 2 pools |
+| Pool `lab-pool` | `192.168.1.200–192.168.1.220` (workloads) |
+| Pool `infra-services-pool` | `192.168.1.50–192.168.1.59` (DNS e outros serviços de infra, `autoAssign=false`) |
 | StorageClass padrão | `local-path` (K3s built-in) |
 | StorageClass NFS | `nfs-storage` (disponível, não usada para workloads) |
 
@@ -190,6 +196,9 @@ flowchart TD
 | kube-prometheus-stack | v0.90.1 | 84.3.0 | `monitoring` |
 | Loki Stack | v2.9.3 | loki-stack-2.10.3 | `monitoring` |
 | NFS Provisioner | 4.0.2 | 4.0.18 | `kube-system` |
+| PostgreSQL | 16-alpine | manifesto direto | `shared-infra` |
+| Redis | 7-alpine | manifesto direto | `shared-infra` |
+| Pi-hole | 2024.07.0 | manifesto direto | `network-services` |
 
 ---
 
@@ -399,6 +408,19 @@ NetBox (192.168.1.72:8000) é a fonte centralizada de IPAM. O Terraform registra
 | node-exporter DaemonSet | todos | 50 Mi | 128 Mi | por nó |
 | Promtail DaemonSet | todos | 64 Mi | 128 Mi | por nó |
 
+### `shared-infra`
+
+| Componente | Nó | RAM request | RAM limit | Notas |
+|---|---|---|---|---|
+| PostgreSQL 16 | `ubuntu-neto` | 256 Mi | 512 Mi | PVC 10Gi · databases: `realtpmsys`, `amfit` |
+| Redis 7 | `ubuntu-neto` | 128 Mi | 256 Mi | PVC 2Gi · AOF + maxmemory 200mb |
+
+### `network-services`
+
+| Componente | Nó | RAM request | RAM limit | Notas |
+|---|---|---|---|---|
+| Pi-hole | `ubuntu-neto` | 128 Mi | 256 Mi | LB 192.168.1.53 · PVCs 1Gi + 256Mi |
+
 ### Estimativa de uso por nó
 
 | Nó | RAM disponível | RAM estimada | Margem |
@@ -406,7 +428,7 @@ NetBox (192.168.1.72:8000) é a fonte centralizada de IPAM. O Terraform registra
 | `k3s-server` | 4 GB | ~1.5 GB | ~2.5 GB |
 | `k3s-worker-cicd` | 6 GB | ~3.5 GB | ~2.5 GB |
 | `ci-runner` | 4 GB | ~0.5 GB + builds | ~2.5 GB |
-| `ubuntu-neto` | 8 GB | ~2.5 GB | ~5.5 GB |
+| `ubuntu-neto` | 8 GB | ~3.0 GB | ~5.0 GB |
 | `raspberry-pi` | 1 GB | ~250 MB (agentes) | ~750 MB |
 
 ---
