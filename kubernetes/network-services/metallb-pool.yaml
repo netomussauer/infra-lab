@@ -1,0 +1,56 @@
+# network-services/metallb-pool.yaml
+# Pool MetalLB SEPARADO do lab-pool (192.168.1.200-220) dedicado a serviços
+# fundacionais de infraestrutura — DNS, futuros: NTP, syslog, monitoring exporters.
+#
+# Mapa de IPs deste pool (infra-services-pool):
+#   192.168.1.50 — reservado
+#   192.168.1.51 — reservado
+#   192.168.1.52 — reservado
+#   192.168.1.53 — Pi-hole (DNS + Web UI)
+#   192.168.1.54-59 — reservado para expansão
+#
+# Por que pool separado:
+#   - Permite policy distinta (ex.: autoAssign: false para forçar IP explícito)
+#   - Isola IPs críticos (DNS) de churn de apps em lab-pool
+#   - Documenta intenção: 1.50-59 = infra, 1.200-220 = workloads
+#
+# Aplicar: kubectl apply -f kubernetes/network-services/metallb-pool.yaml
+---
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: infra-services-pool
+  namespace: metallb-system
+  labels:
+    app.kubernetes.io/name: "metallb"
+    app.kubernetes.io/component: "ip-pool"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+spec:
+  addresses:
+    - 192.168.1.50-192.168.1.59
+  # autoAssign: false — força os Services a declararem explicitamente o IP
+  # via spec.loadBalancerIP ou annotation metallb.universe.tf/loadBalancerIPs.
+  # Evita alocação acidental em IPs de infra crítica (ex.: alguém criar um
+  # Service LB sem annotation e "roubar" o IP do Pi-hole).
+  autoAssign: false
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: infra-services-l2
+  namespace: metallb-system
+  labels:
+    app.kubernetes.io/name: "metallb"
+    app.kubernetes.io/component: "advertisement"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+spec:
+  ipAddressPools:
+    - infra-services-pool
+  # Sem nodeSelectors: qualquer nó pode anunciar via ARP/NDP na LAN.
+  # Em prática o tráfego virá para o nó que tem o Pod (externalTrafficPolicy: Local).

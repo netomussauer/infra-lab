@@ -14,7 +14,9 @@ Laboratório completo de infraestrutura home-lab com cluster Kubernetes K3s mult
 | `192.168.1.72` | netbox-vm *(VM)* | — | NetBox IPAM |
 | `192.168.1.110` | raspberry-pi — hostname: `raspneto` | Raspbian 12 | K3s worker — edge (ARMv7) |
 | `192.168.1.112` | nas | NAS OS (Seagate Black Armor) | NFS storage NFSv3 |
-| `192.168.1.200–220` | MetalLB pool | — | LoadBalancer Services K3s |
+| `192.168.1.50–59` | MetalLB infra pool | — | Serviços de infraestrutura (DNS, etc.) |
+| `192.168.1.53` | Pi-hole | — | DNS interno do lab + filtro de ads |
+| `192.168.1.200–220` | MetalLB lab pool | — | LoadBalancer Services K3s |
 | `192.168.1.201` | Gitea | — | Git + CI webhook |
 | `192.168.1.202` | Harbor | — | Container registry |
 | `192.168.1.203` | ArgoCD | — | GitOps controller |
@@ -191,11 +193,12 @@ export KUBECONFIG=~/.kube/infra-lab.yaml
 
 | Serviço | Endereço | Credenciais padrão |
 | --- | --- | --- |
-| Gitea | `http://192.168.1.201:3000` | admin / (definido na instalação) |
-| Harbor | `http://192.168.1.202` | admin / Harbor12345! |
-| ArgoCD | `http://192.168.1.203` | admin / secret `argocd-initial-admin-secret` |
-| Tekton Dashboard | `http://192.168.1.204` | — |
-| Grafana | `http://192.168.1.210` | admin / lab@admin |
+| Pi-hole | `http://192.168.1.53/admin` (ou `http://pihole.lab.local/admin`) | senha em secret `pihole-admin` |
+| Gitea | `http://192.168.1.201:3000` (ou `http://gitea.lab.local:3000`) | admin / (definido na instalação) |
+| Harbor | `http://192.168.1.202` (ou `http://harbor.lab.local`) | admin / Harbor12345! |
+| ArgoCD | `http://192.168.1.203` (ou `http://argocd.lab.local`) | admin / secret `argocd-initial-admin-secret` |
+| Tekton Dashboard | `http://192.168.1.204` (ou `http://tekton.lab.local`) | — |
+| Grafana | `http://192.168.1.210` (ou `http://grafana.lab.local`) | admin / lab@admin |
 | NetBox | `http://192.168.1.72:8000` | admin / (definido na instalação) |
 
 > Credenciais completas e procedimentos de rotação em [docs/runbook.md — Seção 6](docs/runbook.md#6-acessos-e-credenciais).

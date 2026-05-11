@@ -1,0 +1,16 @@
+# network-services/namespace.yaml
+# Namespace dedicado para serviços de infraestrutura de rede do lab
+# (Pi-hole DNS, e futuros: ddclient, blocky, smokeping, etc.)
+#
+# Aplicar: kubectl apply -f kubernetes/network-services/namespace.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: network-services
+  labels:
+    app.kubernetes.io/name: "network-services"
+    app.kubernetes.io/component: "namespace"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"

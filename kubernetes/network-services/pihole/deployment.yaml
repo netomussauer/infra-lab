@@ -1,0 +1,220 @@
+# network-services/pihole/deployment.yaml
+# Pi-hole — DNS interno do lab + filtro de propaganda para a LAN inteira.
+#
+# Decisões de design (ver também service.yaml):
+#
+#   * strategy: Recreate — PVCs RWO local-path não permitem 2 Pods montando
+#     simultaneamente em rolling update. Aceitamos ~30s de indisponibilidade
+#     de DNS por update (clientes têm cache + roteador deveria ter fallback).
+#
+#   * capabilities NET_BIND_SERVICE/CHOWN/SETFCAP/SYS_NICE — a imagem oficial
+#     do Pi-hole roda dnsmasq + lighttpd + cron + pihole-FTL como root por
+#     design (vide https://github.com/pi-hole/docker-pi-hole). Forçar
+#     runAsNonRoot quebra o entrypoint. Mantemos privilegios mínimos via caps.
+#
+#   * nodeSelector workload=monitoring — fixa no ubuntu-neto (192.168.1.65),
+#     que tem disco SSD e 8GB RAM. Outros nós: k3s-server tem taint de
+#     control-plane, cicd/runner são para CI/CD, raspneto é ARM.
+#
+# Aplicar: kubectl apply -f kubernetes/network-services/pihole/deployment.yaml
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pihole-etc
+  namespace: network-services
+  labels:
+    app.kubernetes.io/name: "pihole"
+    app.kubernetes.io/component: "storage"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pihole-dnsmasq
+  namespace: network-services
+  labels:
+    app.kubernetes.io/name: "pihole"
+    app.kubernetes.io/component: "storage"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pihole
+  namespace: network-services
+  labels:
+    app.kubernetes.io/name: "pihole"
+    app.kubernetes.io/version: "2024.07.0"
+    app.kubernetes.io/component: "dns"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+spec:
+  replicas: 1
+  strategy:
+    # Recreate: PVCs RWO local-path impedem 2 Pods simultâneos. Ver header.
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "pihole"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "pihole"
+        app.kubernetes.io/version: "2024.07.0"
+        app.kubernetes.io/component: "dns"
+        app.kubernetes.io/managed-by: "kubectl"
+        environment: "lab"
+        lab_id: "lab-k8s-01"
+        lab_owner: "jose.mussauer"
+    spec:
+      terminationGracePeriodSeconds: 30
+
+      nodeSelector:
+        workload: "monitoring"
+
+      securityContext:
+        # Pi-hole oficial roda como root — não força-lo a non-root.
+        # Privilegios mínimos vêm das capabilities granuladas abaixo.
+        runAsNonRoot: false
+
+      containers:
+        - name: pihole
+          image: pihole/pihole:2024.07.0
+          imagePullPolicy: IfNotPresent
+
+          securityContext:
+            # Pi-hole oficial precisa das capabilities default do Docker para
+            # operar (chmod, chown, setuid, setgid em logs/pids/lighttpd).
+            # `drop: [ALL]` quebra o entrypoint com "Operation not permitted".
+            # Mantemos as defaults + NET_ADMIN para o FTL gerenciar interface.
+            allowPrivilegeEscalation: false
+            capabilities:
+              add:
+                # FTL precisa para criar regras de rate limiting e gerenciar interface
+                - NET_ADMIN
+                # pihole-FTL ajusta nice/priority do processo de resolução
+                - SYS_NICE
+
+          ports:
+            - name: dns-udp
+              containerPort: 53
+              protocol: UDP
+            - name: dns-tcp
+              containerPort: 53
+              protocol: TCP
+            - name: web
+              containerPort: 80
+              protocol: TCP
+
+          env:
+            - name: TZ
+              value: "America/Sao_Paulo"
+            - name: WEBPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: pihole-admin
+                  key: WEBPASSWORD
+            # Upstream DNS: Cloudflare + Google (separados por ';')
+            - name: PIHOLE_DNS_
+              value: "1.1.1.1;8.8.8.8"
+            # Bind em todas as interfaces — necessário porque o tráfego chega
+            # via Service LB, e o Pod vê origem da rede do cluster (CNI).
+            - name: DNSMASQ_LISTENING
+              value: "all"
+            # IP "público" pelo qual clientes acessam o Pi-hole (Web UI/blockpage)
+            - name: FTLCONF_LOCAL_IPV4
+              value: "192.168.1.53"
+            - name: WEBTHEME
+              value: "default-dark"
+            - name: VIRTUAL_HOST
+              value: "pihole.lab.local"
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "300m"
+              memory: "256Mi"
+
+          # startupProbe — primeiro boot do Pi-hole baixa gravity DB e
+          # gera o blocklist. Pode levar 2-3 min em hardware modesto.
+          # 30 * 10s = 5 min máximo antes de marcar o Pod como falho.
+          startupProbe:
+            httpGet:
+              path: /admin/
+              port: 80
+            failureThreshold: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+
+          readinessProbe:
+            httpGet:
+              path: /admin/
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+            successThreshold: 1
+            timeoutSeconds: 5
+
+          livenessProbe:
+            exec:
+              command:
+                - pihole
+                - status
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 3
+            successThreshold: 1
+            timeoutSeconds: 10
+
+          volumeMounts:
+            - name: pihole-etc
+              mountPath: /etc/pihole
+            - name: pihole-dnsmasq
+              mountPath: /etc/dnsmasq.d
+            # subPath é OBRIGATÓRIO aqui — sem ele o mount sobrescreveria
+            # /etc/dnsmasq.d inteiro e apagaria o 01-pihole.conf gerado pelo
+            # entrypoint. Com subPath montamos APENAS o arquivo customizado.
+            - name: custom-dns
+              mountPath: /etc/dnsmasq.d/02-lab-custom.conf
+              subPath: 02-lab-custom.conf
+              readOnly: true
+
+      volumes:
+        - name: pihole-etc
+          persistentVolumeClaim:
+            claimName: pihole-etc
+        - name: pihole-dnsmasq
+          persistentVolumeClaim:
+            claimName: pihole-dnsmasq
+        - name: custom-dns
+          configMap:
+            name: pihole-custom-dns
+            items:
+              - key: 02-lab-custom.conf
+                path: 02-lab-custom.conf

@@ -492,6 +492,7 @@ kubectl delete pipelinerun -n cicd \
 
 | Serviço | URL | Usuário | Senha padrão |
 |---|---|---|---|
+| Pi-hole | `http://192.168.1.53/admin` | `admin` | `pihole@lab123` (secret `pihole-admin`) |
 | Gitea | `http://192.168.1.201:3000` | `labadmin` | `labadmin123!` |
 | Harbor | `http://192.168.1.202` | `admin` | `Harbor12345!` |
 | ArgoCD | `http://192.168.1.203` | `admin` | ver secret abaixo |

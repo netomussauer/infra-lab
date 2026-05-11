@@ -1,0 +1,59 @@
+# network-services/pihole/service.yaml
+# Service único LoadBalancer expondo Pi-hole na LAN em 192.168.1.53.
+#
+# Decisões:
+#
+#   * externalTrafficPolicy: Local — preserva o IP de origem dos clientes.
+#     Isso é fundamental para o Pi-hole:
+#       1. Dashboard mostra qual cliente fez cada query (caso contrário tudo
+#          aparece como vindo do CNI/SNAT)
+#       2. Group management por cliente (whitelist/blacklist por device)
+#       3. Per-client rate limiting (FTL)
+#     Tradeoff: tráfego só funciona em nós que TÊM o Pod. Como temos 1 réplica
+#     com nodeSelector workload=monitoring (ubuntu-neto), e MetalLB L2
+#     anuncia ARP do nó que tem endpoint local, o tráfego sempre vai pro nó
+#     certo. Sem perdas em prática.
+#
+#   * loadBalancerIP fixo via annotation + spec — MetalLB v0.13+ recomenda
+#     annotation, mantemos spec.loadBalancerIP por compatibilidade.
+#
+#   * 3 ports num único Service — DNS UDP, DNS TCP (para queries >512B/DNSSEC)
+#     e Web UI HTTP. Tudo no mesmo IP simplifica configuração no roteador.
+#
+# Aplicar: kubectl apply -f kubernetes/network-services/pihole/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: pihole
+  namespace: network-services
+  labels:
+    app.kubernetes.io/name: "pihole"
+    app.kubernetes.io/component: "dns"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+  annotations:
+    metallb.universe.tf/address-pool: "infra-services-pool"
+    metallb.universe.tf/loadBalancerIPs: "192.168.1.53"
+spec:
+  type: LoadBalancer
+  # MetalLB v0.13+ usa annotation `loadBalancerIPs` em vez de spec.loadBalancerIP.
+  # Manter ambos causa "service can not have both" no controller.
+  # Preserva source IP para o dashboard do Pi-hole — ver header.
+  externalTrafficPolicy: Local
+  selector:
+    app.kubernetes.io/name: "pihole"
+  ports:
+    - name: dns-udp
+      protocol: UDP
+      port: 53
+      targetPort: 53
+    - name: dns-tcp
+      protocol: TCP
+      port: 53
+      targetPort: 53
+    - name: web
+      protocol: TCP
+      port: 80
+      targetPort: 80

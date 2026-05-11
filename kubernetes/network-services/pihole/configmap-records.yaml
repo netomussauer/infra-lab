@@ -1,0 +1,57 @@
+# network-services/pihole/configmap-records.yaml
+# Registros DNS customizados do lab — formato dnsmasq.
+#
+# Montado em /etc/dnsmasq.d/02-lab-custom.conf via subPath para NÃO sobrescrever
+# os outros arquivos *.conf que o Pi-hole gera automaticamente em runtime
+# (01-pihole.conf, 06-rfc6761.conf, etc.).
+#
+# Prefixo "02-" garante ordenação lexicográfica após o 01-pihole.conf nativo.
+#
+# Para atualizar: editar este ConfigMap e fazer rollout do Deployment:
+#   kubectl rollout restart deployment/pihole -n network-services
+#
+# Aplicar: kubectl apply -f kubernetes/network-services/pihole/configmap-records.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pihole-custom-dns
+  namespace: network-services
+  labels:
+    app.kubernetes.io/name: "pihole"
+    app.kubernetes.io/component: "dns-records"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+data:
+  02-lab-custom.conf: |
+    # =========================================================================
+    # Pi-hole custom DNS records — gerenciado via ConfigMap (GitOps)
+    # NÃO editar pela Web UI: alterações serão perdidas no próximo rollout.
+    # =========================================================================
+
+    # Serviços do lab — MetalLB lab-pool (192.168.1.200-220)
+    address=/gitea.lab.local/192.168.1.201
+    address=/harbor.lab.local/192.168.1.202
+    address=/harbor.infra.local/192.168.1.202
+    address=/argocd.lab.local/192.168.1.203
+    address=/tekton.lab.local/192.168.1.204
+    address=/grafana.lab.local/192.168.1.210
+
+    # Serviços de infraestrutura — infra-services-pool (192.168.1.50-59)
+    address=/pihole.lab.local/192.168.1.53
+
+    # Hosts físicos do lab
+    address=/proxmox.lab.local/192.168.1.20
+    address=/k3s-server.lab.local/192.168.1.30
+    address=/k3s-worker-cicd.lab.local/192.168.1.31
+    address=/ci-runner.lab.local/192.168.1.32
+    address=/ubuntu-neto.lab.local/192.168.1.65
+    address=/raspneto.lab.local/192.168.1.110
+    address=/nas.lab.local/192.168.1.112
+    address=/netbox.lab.local/192.168.1.72
+
+    # AMFIT (reserva — a alocar quando workloads subirem)
+    address=/api.amfit.local/192.168.1.205
+    address=/app.amfit.local/192.168.1.206
+    address=/minio.amfit.local/192.168.1.207

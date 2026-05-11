@@ -1,0 +1,137 @@
+---
+# 06-internal-dns.yml
+# Configura os nós do lab para usar o Pi-hole (192.168.1.53) como DNS primário.
+#
+# Pré-requisito: Pi-hole deployado e acessível em 192.168.1.53.
+# Ver: kubernetes/network-services/pihole/
+#
+# Suporta dois resolvers:
+#   * systemd-resolved (Ubuntu Server) — drop-in em /etc/systemd/resolved.conf.d
+#   * NetworkManager (Raspbian) — drop-in em /etc/NetworkManager/conf.d
+#
+# Resiliência: FallbackDNS=1.1.1.1 8.8.8.8 garante que se o Pi-hole cair,
+# resolução externa continua funcionando (nomes internos *.lab.local não
+# resolvem nesse cenário, mas image pull e apt-update continuam).
+#
+# Aplicar:
+#   ansible-playbook -i inventory/hosts.yml playbooks/06-internal-dns.yml \
+#     --limit 'k3s_server,k3s_agents'
+#
+# Validar (em qualquer nó):
+#   resolvectl status | grep "DNS Server"     # systemd-resolved
+#   nmcli dev show | grep DNS                 # NetworkManager
+#   nslookup gitea.lab.local                  # deve retornar 192.168.1.201
+
+- name: Configurar Pi-hole como DNS primário do lab
+  # Excluir notebook-i7 (Proxmox host — não é nó K8s) via --limit no comando.
+  hosts: all:!notebook-i7
+  become: true
+  gather_facts: true
+  vars:
+    pihole_dns_ip: "192.168.1.53"
+    fallback_dns:
+      - "1.1.1.1"
+      - "8.8.8.8"
+    lab_search_domains:
+      - "lab.local"
+      - "infra.local"
+      - "amfit.local"
+
+  tasks:
+    - name: Detectar resolver DNS ativo
+      ansible.builtin.shell: |
+        if systemctl is-active --quiet systemd-resolved; then
+          echo "systemd-resolved"
+        elif systemctl is-active --quiet NetworkManager; then
+          echo "NetworkManager"
+        else
+          echo "unknown"
+        fi
+      register: dns_resolver
+      changed_when: false
+
+    - name: Exibir resolver detectado
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: resolver = {{ dns_resolver.stdout }}"
+
+    # =================================================================
+    # Caminho 1 — systemd-resolved (Ubuntu)
+    # =================================================================
+    - name: "[systemd-resolved] Garantir diretório /etc/systemd/resolved.conf.d"
+      when: dns_resolver.stdout == "systemd-resolved"
+      ansible.builtin.file:
+        path: /etc/systemd/resolved.conf.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: "[systemd-resolved] Criar drop-in lab-dns.conf"
+      when: dns_resolver.stdout == "systemd-resolved"
+      ansible.builtin.copy:
+        dest: /etc/systemd/resolved.conf.d/lab-dns.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Gerenciado pelo Ansible — não editar manualmente.
+          # Pi-hole no namespace network-services do cluster K3s.
+          [Resolve]
+          DNS={{ pihole_dns_ip }}
+          FallbackDNS={{ fallback_dns | join(' ') }}
+          Domains={{ lab_search_domains | join(' ') }}
+      notify: Reiniciar systemd-resolved
+
+    # =================================================================
+    # Caminho 2 — NetworkManager (Raspbian)
+    # =================================================================
+    - name: "[NetworkManager] Criar drop-in lab-dns.conf"
+      when: dns_resolver.stdout == "NetworkManager"
+      ansible.builtin.copy:
+        dest: /etc/NetworkManager/conf.d/lab-dns.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Gerenciado pelo Ansible — não editar manualmente.
+          # Pi-hole no namespace network-services do cluster K3s.
+          [global-dns-domain-*]
+          servers={{ pihole_dns_ip }},{{ fallback_dns | join(',') }}
+
+          [global-dns]
+          searches={{ lab_search_domains | join(',') }}
+      notify: Reiniciar NetworkManager
+
+    - name: Forçar handlers (flush)
+      ansible.builtin.meta: flush_handlers
+
+    # =================================================================
+    # Validação (ambos os caminhos)
+    # =================================================================
+    - name: Aguardar 3s para DNS estabilizar
+      ansible.builtin.pause:
+        seconds: 3
+
+    - name: Validar que o Pi-hole responde para gitea.lab.local
+      # getent hosts é universal (glibc) — funciona em Ubuntu e Raspbian
+      # sem dependências extras (nslookup/dig podem não estar instalados).
+      ansible.builtin.command:
+        cmd: "getent hosts gitea.lab.local"
+      register: dns_check
+      changed_when: false
+      failed_when: "'192.168.1.201' not in dns_check.stdout"
+
+    - name: Exibir resultado do teste
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} ({{ dns_resolver.stdout }}): DNS OK"
+
+  handlers:
+    - name: Reiniciar systemd-resolved
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: restarted
+
+    - name: Reiniciar NetworkManager
+      ansible.builtin.systemd:
+        name: NetworkManager
+        state: restarted
