@@ -77,7 +77,8 @@ infra-lab/
 │   │   ├── 03-k3s-server.yml       # Instala K3s control-plane
 │   │   ├── 04-k3s-agents.yml       # Junta workers ao cluster
 │   │   ├── 05-post-setup.yml       # Labels, taints, verificação final
-│   │   └── 06-internal-dns.yml     # Configura Pi-hole (.53) como DNS primário dos nós
+│   │   ├── 06-internal-dns.yml     # Configura Pi-hole (.53) como DNS primário dos nós
+│   │   └── 07-k3s-registries.yml   # Instala CA do Harbor no trust store de cada nó
 │   └── requirements.yml
 │
 ├── kubernetes/

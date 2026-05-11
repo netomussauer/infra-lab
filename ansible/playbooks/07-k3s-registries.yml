@@ -1,0 +1,140 @@
+---
+# 07-k3s-registries.yml
+# Instala o CA do Harbor no trust store de cada nó para que containerd valide
+# o certificado autoassinado do Harbor durante image pull.
+#
+# Problema: Harbor do lab serve HTTPS com cert autoassinado pelo CA `harbor-ca`.
+# `containerd` valida TLS contra o trust store do SO de cada nó (não contra
+# certs.d/ por questões de geração de hosts.toml em formato legacy no K3s v1.29).
+# Resultado: image pulls de `harbor.lab.local/*` falham com
+# `x509: certificate signed by unknown authority`.
+#
+# Solução (Opção B do amfit/infra/cluster/PENDING.md item 1.1):
+#   1. Extrair o CA do Harbor do secret `harbor-nginx` no namespace `registry`
+#   2. Copiar para /usr/local/share/ca-certificates/harbor-ca.crt em cada nó
+#   3. Rodar `update-ca-certificates`
+#   4. Reiniciar k3s / k3s-agent para containerd recarregar o trust store
+#
+# Esta abordagem é mais correta que `insecure_skip_verify: true` em
+# registries.yaml (Opção A) — mantém a validação TLS, apenas adiciona o CA
+# interno ao trust store do SO.
+#
+# Aplicar:
+#   ansible-playbook -i inventory/hosts.yml playbooks/07-k3s-registries.yml
+#
+# Validar (em qualquer nó):
+#   sudo crictl pull harbor.lab.local/amfit/api:latest   # deve funcionar sem TLS error
+
+- name: Extrair CA do Harbor do secret harbor-nginx
+  hosts: k3s_server
+  become: false
+  gather_facts: false
+  tasks:
+    - name: Buscar ca.crt do secret harbor-nginx e decodificar
+      # jsonpath com chave que tem dot precisa de escape duplo no shell.
+      # Já decodifica aqui para evitar problemas com b64decode em YAML.
+      ansible.builtin.shell: >-
+        k3s kubectl get secret -n registry harbor-nginx
+        -o jsonpath='{.data.ca\.crt}' | base64 -d
+      args:
+        executable: /bin/bash
+      register: harbor_ca_extract
+      changed_when: false
+
+    - name: Expor CA como fact
+      ansible.builtin.set_fact:
+        harbor_ca_pem: "{{ harbor_ca_extract.stdout }}"
+
+    - name: Validar que o CA é válido (começa com BEGIN CERTIFICATE)
+      ansible.builtin.assert:
+        that:
+          - "'BEGIN CERTIFICATE' in harbor_ca_pem"
+          - "'END CERTIFICATE' in harbor_ca_pem"
+        fail_msg: "CA inválido extraído do secret harbor-nginx"
+
+- name: Instalar CA do Harbor em todos os nós K3s
+  hosts: k3s_server:k3s_agents
+  become: true
+  gather_facts: true
+  vars:
+    harbor_ca_pem: "{{ hostvars[groups['k3s_server'][0]].harbor_ca_pem }}"
+
+  tasks:
+    # ----------------------------------------------------------------
+    # Limpeza: remover registries.yaml legado (caso a Opção A tenha sido
+    # tentada antes — K3s o gera em formato que não honra skip_verify).
+    # ----------------------------------------------------------------
+    - name: Remover /etc/rancher/k3s/registries.yaml legado
+      ansible.builtin.file:
+        path: /etc/rancher/k3s/registries.yaml
+        state: absent
+      notify:
+        - Reiniciar K3s server
+        - Reiniciar K3s agent
+
+    # ----------------------------------------------------------------
+    # Instalar CA no trust store do SO
+    # ----------------------------------------------------------------
+    - name: Copiar CA do Harbor para /usr/local/share/ca-certificates
+      ansible.builtin.copy:
+        dest: /usr/local/share/ca-certificates/harbor-ca.crt
+        owner: root
+        group: root
+        mode: "0644"
+        content: "{{ harbor_ca_pem }}"
+      notify:
+        - Atualizar trust store
+        - Reiniciar K3s server
+        - Reiniciar K3s agent
+
+    - name: Forçar handlers (flush) — trust store antes do restart
+      ansible.builtin.meta: flush_handlers
+
+    - name: Aguardar 10s para K3s estabilizar após restart
+      ansible.builtin.pause:
+        seconds: 10
+
+    # ----------------------------------------------------------------
+    # Validação
+    # ----------------------------------------------------------------
+    - name: Validar que o CA está no bundle do SO
+      ansible.builtin.shell: |
+        awk -v cmd='openssl x509 -noout -subject' '
+          /BEGIN/{close(cmd)};{print | cmd}
+        ' /etc/ssl/certs/ca-certificates.crt | grep -q "harbor-ca"
+      register: ca_in_bundle
+      changed_when: false
+      failed_when: ca_in_bundle.rc != 0
+
+    - name: Validar handshake TLS contra Harbor sem -k
+      # Sem -k = curl valida TLS contra o trust store. Se passar, containerd
+      # também passará. Aceita HTTP 401 (auth obrigatória) — só o handshake importa.
+      ansible.builtin.shell: |
+        curl -s -o /dev/null -w "%{http_code}" \
+          --connect-timeout 5 --max-time 10 \
+          https://harbor.lab.local/v2/
+      register: tls_check
+      changed_when: false
+      failed_when: tls_check.stdout not in ['200', '401']
+
+    - name: Exibir resultado
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: Harbor TLS OK (HTTP {{ tls_check.stdout }})"
+
+  handlers:
+    - name: Atualizar trust store
+      ansible.builtin.command:
+        cmd: update-ca-certificates
+      changed_when: true
+
+    - name: Reiniciar K3s server
+      when: "'k3s_server' in group_names"
+      ansible.builtin.systemd:
+        name: k3s
+        state: restarted
+
+    - name: Reiniciar K3s agent
+      when: "'k3s_agents' in group_names"
+      ansible.builtin.systemd:
+        name: k3s-agent
+        state: restarted

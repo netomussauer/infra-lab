@@ -269,6 +269,7 @@ bash scripts/k8s-bootstrap.sh step_monitoring
 | `step_shared_infra` | Instala PostgreSQL 16 + Redis 7 compartilhados (ns `shared-infra`) | Nó ubuntu-neto no cluster |
 | `step_pihole` | Instala Pi-hole + pool MetalLB `infra-services-pool` (ns `network-services`) | MetalLB, nó ubuntu-neto |
 | `step_internal_dns` | Aplica playbook Ansible que reconfigura DNS dos nós (Pi-hole primário) | `step_pihole` |
+| `step_harbor_trust` | Aplica playbook Ansible que instala CA do Harbor no trust store dos nós | `step_harbor` |
 | `step_hello_lab` | Deploy da aplicação de exemplo | Cluster running |
 
 ### 4.4 Secrets obrigatórios antes do Tekton
@@ -1093,3 +1094,41 @@ kubectl patch deploy coredns -n kube-system --type=strategic \
    ```bash
    kubectl scale deploy coredns -n kube-system --replicas=2
    ```
+
+---
+
+### P23: Harbor TLS — `x509: certificate signed by unknown authority` no image pull
+
+**Sintoma:** ao criar um Pod com `image: harbor.lab.local/<projeto>/<app>:<tag>`, o pod fica em `ImagePullBackOff` com evento:
+
+```text
+Failed to pull image "harbor.lab.local/amfit/api:latest":
+... tls: failed to verify certificate: x509: certificate signed by unknown authority
+```
+
+**Causa:** o Harbor usa certificado autoassinado pelo CA interno `harbor-ca` (não confiado pelo trust store padrão do SO de cada nó). O `containerd` valida TLS contra `/etc/ssl/certs/ca-certificates.crt` e rejeita.
+
+**Por que `registries.yaml` com `insecure_skip_verify: true` NÃO funciona:**
+
+K3s v1.29.3 gera o `/var/lib/rancher/k3s/agent/etc/containerd/certs.d/<host>/hosts.toml` em formato legacy (top-level `skip_verify`), mas o containerd 1.7+ requer `skip_verify` dentro do bloco `[host."..."]`. A config é gerada mas ignorada no handshake. Editar manualmente o arquivo é inútil — K3s sobrescreve no próximo restart.
+
+**Solução:** instalar o CA do Harbor no trust store de cada nó.
+
+```bash
+# Playbook idempotente que extrai o CA do secret harbor-nginx do cluster
+# e instala em /usr/local/share/ca-certificates/harbor-ca.crt dos 5 nós,
+# depois roda update-ca-certificates e reinicia k3s/k3s-agent.
+ansible-playbook -i inventory/hosts.yml playbooks/07-k3s-registries.yml
+```
+
+**Validar:**
+
+```bash
+# Em qualquer nó, curl SEM -k deve retornar HTTP 401 (auth obrigatória):
+curl -sS -o /dev/null -w "%{http_code}\n" https://harbor.lab.local/v2/
+
+# Pull real com credenciais — deve baixar sem TLS error:
+sudo crictl pull --creds "admin:Harbor12345!" harbor.lab.local/<projeto>/<app>:latest
+```
+
+**Quando o CA do Harbor for rotacionado:** re-executar o playbook 07. Ele extrai a versão atual do CA do secret `harbor-nginx` e atualiza o trust store dos nós.
