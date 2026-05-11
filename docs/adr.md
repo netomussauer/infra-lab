@@ -22,6 +22,7 @@ Cada ADR documenta uma decisão de design tomada neste projeto: o contexto que l
 | [ADR-008](#adr-008) | PostgreSQL para o Gitea em vez de SQLite | Aceito |
 | [ADR-009](#adr-009) | NFSv3 para montagens de host — NAS Seagate Black Armor | Aceito |
 | [ADR-010](#adr-010) | Pi-hole como DNS interno do lab (vs dnsmasq, CoreDNS, VM dedicada) | Aceito |
+| [ADR-011](#adr-011) | Sealed Secrets como plataforma de gestão de secrets (vs SOPS, ExternalSecrets+Vault) | Aceito |
 
 ---
 
@@ -346,3 +347,75 @@ Para resolver, é necessário um DNS na LAN que entenda os nomes internos do lab
 - Registros customizados estão em `kubernetes/network-services/pihole/configmap-records.yaml` (formato dnsmasq `address=/host/IP`) — mudanças exigem `kubectl apply` + `kubectl rollout restart deployment/pihole`.
 - Senha do admin: secret `pihole-admin` no namespace `network-services` — alterar em produção real.
 - O Pi-hole roda em um único nó (`ubuntu-neto`) com `strategy: Recreate` — durante upgrade há ~30s de indisponibilidade de DNS. Aceitável pelo fallback configurado.
+
+---
+
+## ADR-011
+
+**Título:** Sealed Secrets como plataforma de gestão de secrets (vs SOPS, ExternalSecrets+Vault)
+
+**Status:** Aceito
+
+**Contexto:**
+
+A entrega do AMFIT (item #2 de `amfit/infra/cluster/PENDING.md`) revelou que o cluster não tinha solução de secret management. O Secret `amfit-secrets` foi criado manualmente no cluster (chaves JWT + credenciais de banco), enquanto o repositório Git tinha **placeholders** (`REPLACE_WITH_*_PEM`). O ArgoCD ignorava o diff via `ignoreDifferences`, mas o risco era que se o Secret fosse deletado, o GitOps reapliciaria os placeholders e quebraria a API.
+
+Como o lab hospedará múltiplos projetos no futuro (`realtpmsys`, AMFIT, outros), foi necessário escolher uma solução **compartilhada** que qualquer projeto possa adotar de forma idêntica.
+
+**Alternativas consideradas:**
+
+| Critério | Sealed Secrets | SOPS + age + KSops | ExternalSecrets + Vault |
+| --- | --- | --- | --- |
+| Componente no cluster | Controller único (~80 Mi) | Plugin no ArgoCD repo-server | Operator + Vault (~512 Mi+) |
+| Encrypted secret no Git | Sim (objeto `SealedSecret`) | Sim (arquivo `.enc.yaml`) | Não (apenas referência) |
+| Backend externo necessário | Não | Não | Sim (Vault, AWS SM, etc.) |
+| Encryption offline pelo dev | Sim (cert público) | Sim (chave age) | Não (requer backend up) |
+| Curva de aprendizado | Baixa (`kubeseal`) | Média (SOPS + KSops plugin) | Alta (Vault auth, policies) |
+| Disaster recovery (perda de key) | Reproviar todos secrets | Reprovisar todos secrets | Backend persistente |
+| Adequação a múltiplos projetos | Excelente — mesmo pattern para todos | Excelente | Excelente, mas overkill para lab |
+
+**Decisão:** Sealed Secrets `v0.36.6` (Bitnami Labs), controller deployado em `kube-system` via Kustomize (`kubernetes/sealed-secrets/`).
+
+**Justificativa:**
+
+- **Operação simples:** `kubeseal` CLI gera `SealedSecret` localmente → commit no Git → controller decripta automaticamente no cluster. Padrão familiar para qualquer dev.
+- **Encryption offline:** o cert público está em `kubernetes/sealed-secrets/pub-cert.pem` (commitado, é seguro). Devs sem acesso ao cluster conseguem encriptar.
+- **Helper script:** `scripts/seal-secret.sh` encapsula `kubeseal` com defaults do lab (escopo `strict`, cert local) — qualquer projeto novo usa o mesmo wrapper.
+- **Escopo `strict` (default):** o `SealedSecret` só decripta se NAME **e** NAMESPACE baterem no apply. Mais seguro — não é possível copiar entre namespaces para vazar dados.
+- **Sem backend externo:** Vault seria overkill para home lab (mais um StatefulSet + RBAC + auth methods). ExternalSecrets é boa solução, mas depende de um backend que ainda não existe.
+
+**Estrutura adotada (cluster-wide, reutilizável por qualquer projeto):**
+
+```text
+infra-lab/
+├── kubernetes/sealed-secrets/
+│   ├── controller-upstream.yaml    # manifest oficial do release (não editar)
+│   ├── kustomization.yaml          # patches do lab (nodeSelector, labels)
+│   └── pub-cert.pem                # cert público — usado para encryption offline
+└── scripts/
+    └── seal-secret.sh              # wrapper de kubeseal — padroniza uso entre projetos
+```
+
+**Como cada projeto usa:**
+
+```bash
+# 1. Criar Secret normal localmente (NÃO comitar este)
+kubectl create secret generic my-app-secrets \
+  --from-literal=API_KEY=s3cret123 \
+  --namespace=my-app \
+  --dry-run=client -o yaml > /tmp/secret.yaml
+
+# 2. Encriptar
+./scripts/seal-secret.sh /tmp/secret.yaml > my-app/k8s/sealedsecret.yaml
+
+# 3. Commitar — só o SealedSecret vai pro Git, o Secret descriptografado fica só no cluster
+```
+
+**Consequências:**
+
+- **Master key fica no cluster:** o controller cria o secret `sealed-secrets-key*` no namespace `kube-system`. Se for perdido (delete + reinstall), **todos** os SealedSecrets do cluster viram inúteis. Procedimento de backup documentado em `docs/runbook.md` seção 5.x (decisão de onde guardar fica com o owner do lab).
+- **Rotação automática a cada 30 dias:** o controller gera novas keys e mantém as antigas para decryption de SealedSecrets existentes. Nenhuma re-encryption obrigatória.
+- **Cert público pode ser comitado:** é criptografia assimétrica — o `pub-cert.pem` é seguro em repo público.
+- **`kubeseal` CLI precisa ser instalado** pelo dev (ou pelo CI) — não está no cluster. Instalação documentada no runbook.
+- O escopo `strict` torna refactors de namespace/nome mais custosos (precisa re-encriptar). Aceitável — segurança > conveniência.
+- O controller em `kube-system` segue a convenção oficial do projeto. Migrar para namespace dedicado (`sealed-secrets`) é possível mas exige `--controller-namespace` em todo `kubeseal` — fricção alta para todos os projetos.

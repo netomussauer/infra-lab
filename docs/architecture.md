@@ -199,6 +199,7 @@ flowchart TD
 | PostgreSQL | 16-alpine | manifesto direto | `shared-infra` |
 | Redis | 7-alpine | manifesto direto | `shared-infra` |
 | Pi-hole | 2024.07.0 | manifesto direto | `network-services` |
+| Sealed Secrets | v0.36.6 | Kustomize sobre release oficial | `kube-system` |
 
 ---
 

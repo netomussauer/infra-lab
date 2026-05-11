@@ -128,6 +128,10 @@ infra-lab/
 │   │       ├── configmap-records.yaml
 │   │       ├── deployment.yaml
 │   │       └── service.yaml
+│   ├── sealed-secrets/              # Plataforma de gestão de secrets (cluster-wide)
+│   │   ├── controller-upstream.yaml # Manifesto oficial do release v0.36.6
+│   │   ├── kustomization.yaml       # Patches do lab (nodeSelector amd64, labels)
+│   │   └── pub-cert.pem             # Cert público — encryption offline pelos devs
 │   └── apps/
 │       └── hello-lab/
 │           ├── deployment.yaml
@@ -137,6 +141,7 @@ infra-lab/
     ├── bootstrap.sh             # Orquestra Terraform + Ansible (VMs)
     ├── init-baremetal.sh        # Provisionamento inicial de hosts bare metal
     ├── k8s-bootstrap.sh         # Instala stack K8s completa via Helm
+    ├── seal-secret.sh           # Wrapper de kubeseal — encripta Secrets como SealedSecret
     ├── get-kubeconfig.sh        # Copia kubeconfig do k3s-server (Linux/macOS)
     └── get-kubeconfig.ps1       # Copia kubeconfig do k3s-server (Windows/PowerShell)
 ```

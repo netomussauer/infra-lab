@@ -270,6 +270,7 @@ bash scripts/k8s-bootstrap.sh step_monitoring
 | `step_pihole` | Instala Pi-hole + pool MetalLB `infra-services-pool` (ns `network-services`) | MetalLB, nó ubuntu-neto |
 | `step_internal_dns` | Aplica playbook Ansible que reconfigura DNS dos nós (Pi-hole primário) | `step_pihole` |
 | `step_harbor_trust` | Aplica playbook Ansible que instala CA do Harbor no trust store dos nós | `step_harbor` |
+| `step_sealed_secrets` | Instala Sealed Secrets controller (`kube-system`) + Kustomize com nodeSelector amd64 | Cluster running |
 | `step_hello_lab` | Deploy da aplicação de exemplo | Cluster running |
 
 ### 4.4 Secrets obrigatórios antes do Tekton
@@ -382,6 +383,91 @@ servers=192.168.1.53,1.1.1.1,8.8.8.8
 searches=lab.local,infra.local,amfit.local
 EOF
 sudo systemctl restart NetworkManager
+```
+
+### 4.7 Sealed Secrets — encriptar secrets por projeto
+
+A partir de 2026-05-11, o lab tem **Sealed Secrets** (Bitnami Labs) v0.36.6 instalado no cluster como plataforma compartilhada de gestão de secrets. Qualquer projeto pode encriptar localmente e commitar o resultado no Git — apenas o controller no cluster decripta. Ver [ADR-011](./adr.md#adr-011) para o racional da escolha.
+
+**Pré-requisitos (uma vez por máquina de dev):**
+
+```bash
+# Instalar kubeseal CLI (Linux/WSL — versão deve bater com o controller)
+KUBESEAL_VERSION=0.36.6
+ARCH=$(dpkg --print-architecture)
+curl -sSL -o /tmp/kubeseal.tar.gz \
+  "https://github.com/bitnami-labs/sealed-secrets/releases/download/v${KUBESEAL_VERSION}/kubeseal-${KUBESEAL_VERSION}-linux-${ARCH}.tar.gz"
+tar xzf /tmp/kubeseal.tar.gz -C /tmp
+sudo mv /tmp/kubeseal /usr/local/bin/
+```
+
+**Workflow recomendado (qualquer projeto):**
+
+```bash
+# 1. Criar Secret normal localmente (NUNCA comitar este arquivo)
+kubectl create secret generic my-app-secrets \
+  --from-literal=DATABASE_URL='postgres://...' \
+  --from-literal=API_KEY='s3cret123' \
+  --namespace=my-app \
+  --dry-run=client -o yaml > /tmp/secret.yaml
+
+# 2. Encriptar — gera SealedSecret usando o cert público em kubernetes/sealed-secrets/pub-cert.pem
+./scripts/seal-secret.sh /tmp/secret.yaml > my-app/k8s/sealedsecret.yaml
+
+# 3. Commitar o SealedSecret no Git do projeto
+git add my-app/k8s/sealedsecret.yaml
+git commit -m "feat: add my-app secrets as SealedSecret"
+
+# 4. ArgoCD (ou kubectl apply manual) aplica o SealedSecret
+#    → controller no cluster decripta automaticamente → cria Secret/my-app-secrets
+
+# 5. Limpar o Secret descriptografado local
+shred -u /tmp/secret.yaml
+```
+
+**Variáveis do script `seal-secret.sh`:**
+
+| Var | Default | Uso |
+| --- | --- | --- |
+| `PUB_CERT` | `kubernetes/sealed-secrets/pub-cert.pem` | Caminho do cert público para encryption offline |
+| `SCOPE` | `strict` | `strict` (name+ns travados) · `namespace-wide` · `cluster-wide` |
+| `FETCH_CERT` | `false` | Se `true`, busca cert do cluster em runtime (requer kubeconfig) |
+
+**Atualizar o cert público após rotação do controller (a cada 30 dias):**
+
+```bash
+# O controller mantém keys antigas para decryption — SealedSecrets existentes
+# continuam funcionando. Mas para encriptar NOVOS secrets, use o cert mais recente.
+ssh labadmin@192.168.1.30 \
+  "k3s kubectl -n kube-system get secret -l sealedsecrets.bitnami.com/sealed-secrets-key \
+    -o jsonpath='{.items[0].data.tls\.crt}' | base64 -d" \
+  > kubernetes/sealed-secrets/pub-cert.pem
+
+git add kubernetes/sealed-secrets/pub-cert.pem
+git commit -m "chore: refresh sealed-secrets public cert"
+```
+
+**Backup do master key (CRÍTICO — sem ele, todos os SealedSecrets viram inúteis):**
+
+```bash
+# Exportar todas as keys (ativa + arquivadas) para um único arquivo PEM
+ssh labadmin@192.168.1.30 \
+  "k3s kubectl -n kube-system get secret -l sealedsecrets.bitnami.com/sealed-secrets-key \
+    -o yaml" > /tmp/sealed-secrets-keys-backup-$(date +%Y%m%d).yaml
+
+# Guardar em local SEGURO e offline:
+#   - 1Password / Bitwarden em campo de attachment
+#   - Pendrive criptografado guardado fisicamente
+#   - NÃO em repositório Git, mesmo privado
+shred -u /tmp/sealed-secrets-keys-backup-*.yaml   # após copiar para destino seguro
+```
+
+**Restore (disaster recovery):**
+
+```bash
+# Reinstalar o controller e ANTES de qualquer SealedSecret ser aplicado:
+kubectl apply -f /caminho/seguro/sealed-secrets-keys-backup-YYYYMMDD.yaml
+kubectl delete pod -n kube-system -l name=sealed-secrets-controller   # re-load das keys
 ```
 
 ---

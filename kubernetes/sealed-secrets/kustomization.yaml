@@ -1,0 +1,48 @@
+# kustomization.yaml — Sealed Secrets controller para o lab.
+#
+# Mantém o controller-upstream.yaml intacto (baixado direto do release) para
+# facilitar upgrades — basta substituir o arquivo e re-aplicar `kubectl apply -k`.
+# Os ajustes específicos do lab vivem nos patches abaixo.
+#
+# Aplicar:
+#   kubectl apply -k kubernetes/sealed-secrets/
+#
+# Upgrade do controller (ex.: v0.36.6 → v0.37.0):
+#   curl -sSL -o controller-upstream.yaml \
+#     https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.37.0/controller.yaml
+#   kubectl apply -k kubernetes/sealed-secrets/
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - controller-upstream.yaml
+
+patches:
+  # Fixa o controller em nó x86_64 — o RPi (ARMv7, 1GB) é lento demais para
+  # passar liveness probe no primeiro boot, mesmo com imagem multi-arch disponível.
+  - target:
+      kind: Deployment
+      name: sealed-secrets-controller
+      namespace: kube-system
+    patch: |-
+      - op: add
+        path: /spec/template/spec/nodeSelector
+        value:
+          kubernetes.io/arch: amd64
+
+  # Adiciona labels padrão do lab a todo o Deployment.
+  - target:
+      kind: Deployment
+      name: sealed-secrets-controller
+      namespace: kube-system
+    patch: |-
+      - op: add
+        path: /metadata/labels/environment
+        value: "lab"
+      - op: add
+        path: /metadata/labels/lab_id
+        value: "lab-k8s-01"
+      - op: add
+        path: /metadata/labels/lab_owner
+        value: "jose.mussauer"
