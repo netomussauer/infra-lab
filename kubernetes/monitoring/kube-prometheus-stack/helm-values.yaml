@@ -20,6 +20,13 @@
 grafana:
   enabled: true
 
+  # Init container `init-chown-data` faz chown -R com capabilities.drop=ALL e add=CHOWN.
+  # Sem CAP_DAC_READ_SEARCH, UID 0 não consegue percorrer subdirs 0700 (png/pdf/csv) —
+  # gera Permission denied em loop. O fsGroup 472 abaixo já garante o ownership do volume,
+  # tornando o init container redundante.
+  initChownData:
+    enabled: false
+
   nodeSelector:
     workload: "monitoring"
 
@@ -348,6 +355,17 @@ prometheusOperator:
       operator: "Exists"
       effect: "NoExecute"
       tolerationSeconds: 300
+
+  # Hook jobs do admission webhook usam `ghcr.io/jkroepke/kube-webhook-certgen`,
+  # imagem sem manifest ARM. Restringir agendamento aos nós amd64 evita o
+  # ImagePullBackOff que o cluster sofreu quando o scheduler colocou o hook no raspneto.
+  admissionWebhooks:
+    patch:
+      nodeSelector:
+        kubernetes.io/arch: amd64
+    deployment:
+      nodeSelector:
+        kubernetes.io/arch: amd64
 
 # ============================================================
 # COMPONENTES DESABILITADOS NO LAB (sem acesso ao cloud provider)
