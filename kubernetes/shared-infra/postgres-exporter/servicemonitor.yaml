@@ -1,0 +1,33 @@
+# ServiceMonitor — instrui o Prometheus do kube-prometheus-stack a scrapear
+# o exporter. Selector pega o Service `postgres-exporter` por label.
+#
+# Intervalo de 30s é suficiente: pg_stat_statements muda lentamente; scrape
+# mais agressivo só aumenta load no postgres sem ganhar resolução útil.
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: postgres-exporter
+  namespace: shared-infra
+  labels:
+    app.kubernetes.io/name: "postgres-exporter"
+    app.kubernetes.io/component: "metrics-scrape"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+    # Label que o kube-prometheus-stack usa para descobrir ServiceMonitors:
+    # spec.serviceMonitorSelector.matchLabels.release = kube-prometheus-stack
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "postgres-exporter"
+  namespaceSelector:
+    matchNames:
+      - shared-infra
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

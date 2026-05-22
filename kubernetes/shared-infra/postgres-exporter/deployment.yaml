@@ -1,0 +1,87 @@
+# postgres_exporter — exporta métricas do PostgreSQL para o Prometheus.
+#
+# Versão: 0.17.x (multi-arch, Alpine). Imagem oficial mantida pela
+# prometheus-community.
+#
+# Features ligadas via flag:
+#   --auto-discover-databases: o exporter consulta pg_database e expõe
+#     métricas por DB (label `datname` em todas as séries pg_database_*).
+#   --collector.stat_statements: liga o coletor de pg_stat_statements
+#     (queries top, mean_exec_time, calls, rows). Habilitado por padrão na
+#     0.17+ se a extensão estiver presente — declaramos explicitamente
+#     para deixar a intenção clara.
+#
+# Recursos: o exporter consome ~30-50MB em estado idle. Limit conservador.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-exporter
+  namespace: shared-infra
+  labels:
+    app.kubernetes.io/name: "postgres-exporter"
+    app.kubernetes.io/version: "0.17.1"
+    app.kubernetes.io/component: "metrics-exporter"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "postgres-exporter"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "postgres-exporter"
+        app.kubernetes.io/component: "metrics-exporter"
+        environment: "lab"
+        lab_id: "lab-k8s-01"
+        lab_owner: "jose.mussauer"
+    spec:
+      # Roda no mesmo nó do postgres (ubuntu-neto, workload=monitoring) —
+      # reduz hops na rede pra cada scrape.
+      nodeSelector:
+        workload: monitoring
+      containers:
+        - name: exporter
+          image: quay.io/prometheuscommunity/postgres-exporter:v0.17.1
+          imagePullPolicy: IfNotPresent
+          args:
+            - --auto-discover-databases
+            - --collector.stat_statements
+            - --collector.long_running_transactions
+          ports:
+            - name: metrics
+              containerPort: 9187
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: postgres-exporter
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

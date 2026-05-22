@@ -107,7 +107,8 @@ infra-lab/
 │   │   ├── loki-stack/
 │   │   │   └── helm-values.yaml    # Loki + Promtail DaemonSet
 │   │   └── dashboards/
-│   │       └── k8s-cluster-dashboard.yaml  # ConfigMap Grafana
+│   │       ├── k8s-cluster-dashboard.yaml      # ConfigMap Grafana — visão geral do cluster
+│   │       └── postgres-top-queries.yaml       # ConfigMap Grafana — pg_stat_statements (top queries, cache hit, TPS)
 │   ├── shared-infra/                # Bancos compartilhados entre projetos
 │   │   ├── namespace.yaml
 │   │   ├── postgresql/              # PostgreSQL 16 — databases realtpmsys, amfit
@@ -115,11 +116,16 @@ infra-lab/
 │   │   │   ├── configmap.yaml       # initdb scripts
 │   │   │   ├── statefulset.yaml
 │   │   │   └── service.yaml
-│   │   └── redis/                   # Redis 7 — cache + sessões
-│   │       ├── secret.yaml
-│   │       ├── configmap.yaml       # redis.conf
-│   │       ├── statefulset.yaml
-│   │       └── service.yaml
+│   │   ├── redis/                   # Redis 7 — cache + sessões
+│   │   │   ├── secret.yaml
+│   │   │   ├── configmap.yaml       # redis.conf
+│   │   │   ├── statefulset.yaml
+│   │   │   └── service.yaml
+│   │   └── postgres-exporter/       # Prometheus exporter — pg_stat_statements + métricas pg_*
+│   │       ├── secret.yaml          # DATA_SOURCE_NAME (DSN libpq do superuser)
+│   │       ├── deployment.yaml      # quay.io/prometheuscommunity/postgres-exporter:v0.17.1
+│   │       ├── service.yaml         # ClusterIP :9187
+│   │       └── servicemonitor.yaml  # scrape 30s, label release=kube-prometheus-stack
 │   ├── network-services/            # Serviços de rede do lab
 │   │   ├── namespace.yaml
 │   │   ├── metallb-pool.yaml        # infra-services-pool (192.168.1.50-59)

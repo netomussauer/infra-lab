@@ -1,0 +1,266 @@
+# monitoring/dashboards/postgres-top-queries.yaml
+# Dashboard Grafana focado em pg_stat_statements: identifica queries
+# lentas, mais frequentes e mais custosas em todos os DBs do shared-infra.
+#
+# O sidecar do Grafana detecta ConfigMaps com label grafana_dashboard: "1"
+# em qualquer namespace e carrega automaticamente. Aparece em:
+#   Dashboards > Lab - Database > Postgres Top Queries
+#
+# Painéis:
+#   1. Top 10 queries por mean_exec_time (queries individualmente lentas)
+#   2. Top 10 queries por calls (queries mais frequentes)
+#   3. Top 10 queries por total_exec_time (mais custosas no agregado)
+#   4. Cache hit ratio por DB
+#   5. Conexões ativas por DB
+#   6. DB size por DB
+#
+# Variável $datname permite filtrar por banco (realtpmsys / amfit / etc).
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-top-queries-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/name: "postgres-top-queries-dashboard"
+    app.kubernetes.io/component: "grafana-dashboard"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+  annotations:
+    grafana_folder: "Lab - Database"
+data:
+  postgres-top-queries.json: |
+    {
+      "annotations": { "list": [] },
+      "description": "Top queries do Postgres (shared-infra) via pg_stat_statements. Use o queryid mostrado nas tabelas para drill-down via psql: SELECT query, calls, mean_exec_time FROM pg_stat_statements WHERE queryid = <id>;",
+      "editable": true,
+      "graphTooltip": 1,
+      "id": null,
+      "panels": [
+        {
+          "type": "text",
+          "title": "Como usar",
+          "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+          "id": 99,
+          "options": {
+            "mode": "markdown",
+            "content": "**Drill-down: queryid → texto da query**\n\nO Prometheus expõe `queryid` (hash) — não o texto SQL, pois isso explodiria cardinalidade. Para resolver o `queryid` no texto da query, conecte ao postgres:\n\n```bash\nkubectl exec -n shared-infra postgresql-0 -- psql -U postgres -d <datname> \\\n  -c \"SELECT query, calls, mean_exec_time, total_exec_time FROM pg_stat_statements WHERE queryid = <queryid>;\"\n```\n\nReset do histórico (após otimização):\n```sql\nSELECT pg_stat_statements_reset();\n```"
+          }
+        },
+        {
+          "type": "row",
+          "title": "Performance — pg_stat_statements",
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 4 },
+          "id": 100,
+          "collapsed": false
+        },
+        {
+          "type": "table",
+          "title": "Top 10 queries por mean exec time (latência por execução)",
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 5 },
+          "id": 1,
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "topk(10, rate(pg_stat_statements_seconds_total{datname=~\"$datname\"}[5m]) / clamp_min(rate(pg_stat_statements_calls_total{datname=~\"$datname\"}[5m]), 1))",
+              "format": "table",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": { "Time": true, "__name__": true, "job": true, "instance": true, "service": true },
+                "renameByName": { "datname": "Database", "queryid": "Query ID", "user": "User", "Value": "Mean time (s)" }
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "custom": { "align": "auto" }, "unit": "s" }
+          }
+        },
+        {
+          "type": "table",
+          "title": "Top 10 queries por número de calls",
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 15 },
+          "id": 2,
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "topk(10, pg_stat_statements_calls_total{datname=~\"$datname\"})",
+              "format": "table",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": { "Time": true, "__name__": true, "job": true, "instance": true, "service": true },
+                "renameByName": { "datname": "Database", "queryid": "Query ID", "user": "User", "Value": "Total calls" }
+              }
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "title": "Top 10 queries por total exec time (custo agregado)",
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 25 },
+          "id": 3,
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "topk(10, pg_stat_statements_seconds_total{datname=~\"$datname\"})",
+              "format": "table",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": { "Time": true, "__name__": true, "job": true, "instance": true, "service": true },
+                "renameByName": { "datname": "Database", "queryid": "Query ID", "user": "User", "Value": "Total exec time (s)" }
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "custom": { "align": "auto" }, "unit": "s" }
+          }
+        },
+        {
+          "type": "row",
+          "title": "Saúde do cluster",
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 35 },
+          "id": 200,
+          "collapsed": false
+        },
+        {
+          "type": "stat",
+          "title": "Cache hit ratio (%)",
+          "gridPos": { "h": 6, "w": 8, "x": 0, "y": 36 },
+          "id": 4,
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "100 * sum(pg_stat_database_blks_hit{datname=~\"$datname\"}) / (sum(pg_stat_database_blks_hit{datname=~\"$datname\"}) + sum(pg_stat_database_blks_read{datname=~\"$datname\"}))",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "yellow", "value": 90 },
+                  { "color": "green", "value": 99 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Conexões ativas por DB",
+          "gridPos": { "h": 6, "w": 8, "x": 8, "y": 36 },
+          "id": 5,
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "pg_stat_database_numbackends{datname=~\"$datname\"}",
+              "legendFormat": "{{datname}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "DB size (bytes)",
+          "gridPos": { "h": 6, "w": 8, "x": 16, "y": 36 },
+          "id": 6,
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "pg_database_size_bytes{datname=~\"$datname\"}",
+              "legendFormat": "{{datname}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": { "defaults": { "unit": "bytes" } }
+        },
+        {
+          "type": "timeseries",
+          "title": "Transactions/s — commits vs rollbacks",
+          "gridPos": { "h": 6, "w": 12, "x": 0, "y": 42 },
+          "id": 7,
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum by (datname) (rate(pg_stat_database_xact_commit{datname=~\"$datname\"}[5m]))",
+              "legendFormat": "{{datname}} commits",
+              "refId": "A"
+            },
+            {
+              "expr": "sum by (datname) (rate(pg_stat_database_xact_rollback{datname=~\"$datname\"}[5m]))",
+              "legendFormat": "{{datname}} rollbacks",
+              "refId": "B"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Tuples affected/s — insert / update / delete",
+          "gridPos": { "h": 6, "w": 12, "x": 12, "y": 42 },
+          "id": 8,
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum by (datname) (rate(pg_stat_database_tup_inserted{datname=~\"$datname\"}[5m]))",
+              "legendFormat": "{{datname}} INSERT",
+              "refId": "A"
+            },
+            {
+              "expr": "sum by (datname) (rate(pg_stat_database_tup_updated{datname=~\"$datname\"}[5m]))",
+              "legendFormat": "{{datname}} UPDATE",
+              "refId": "B"
+            },
+            {
+              "expr": "sum by (datname) (rate(pg_stat_database_tup_deleted{datname=~\"$datname\"}[5m]))",
+              "legendFormat": "{{datname}} DELETE",
+              "refId": "C"
+            }
+          ]
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "tags": ["postgres", "database", "lab"],
+      "templating": {
+        "list": [
+          {
+            "name": "datname",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "query": { "query": "label_values(pg_database_size_bytes, datname)", "refId": "PrometheusVariableQueryEditor-VariableQuery" },
+            "refresh": 1,
+            "multi": true,
+            "includeAll": true,
+            "current": { "selected": true, "text": ["All"], "value": ["$__all"] }
+          }
+        ]
+      },
+      "time": { "from": "now-1h", "to": "now" },
+      "title": "Postgres Top Queries",
+      "uid": "postgres-top-queries",
+      "version": 1,
+      "weekStart": ""
+    }
