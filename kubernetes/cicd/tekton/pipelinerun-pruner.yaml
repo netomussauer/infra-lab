@@ -1,0 +1,197 @@
+---
+# Pruner de PipelineRuns/TaskRuns do Tekton — namespace cicd
+#
+# Remove diariamente:
+#   - PipelineRuns/TaskRuns com status Failed (reason != "Succeeded") mais antigos que 7 dias
+#   - PipelineRuns/TaskRuns concluidos com sucesso mais antigos que 30 dias
+# Mantem os ultimos 10 PipelineRuns Succeeded como historico independente da idade.
+#
+# Aplicar: kubectl apply -f kubernetes/cicd/tekton/pipelinerun-pruner.yaml
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tekton-pruner
+  namespace: cicd
+  labels:
+    app.kubernetes.io/name: tekton-pruner
+    app.kubernetes.io/component: cleanup
+    environment: lab
+    lab_id: lab-k8s-01
+    lab_owner: jose.mussauer
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tekton-pruner
+  namespace: cicd
+  labels:
+    app.kubernetes.io/name: tekton-pruner
+    environment: lab
+    lab_id: lab-k8s-01
+    lab_owner: jose.mussauer
+rules:
+  - apiGroups: ["tekton.dev"]
+    resources: ["pipelineruns", "taskruns"]
+    verbs: ["get", "list", "delete"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tekton-pruner
+  namespace: cicd
+  labels:
+    app.kubernetes.io/name: tekton-pruner
+    environment: lab
+    lab_id: lab-k8s-01
+    lab_owner: jose.mussauer
+subjects:
+  - kind: ServiceAccount
+    name: tekton-pruner
+    namespace: cicd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tekton-pruner
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tekton-pruner
+  namespace: cicd
+  labels:
+    app.kubernetes.io/name: tekton-pruner
+    app.kubernetes.io/component: cleanup
+    environment: lab
+    lab_id: lab-k8s-01
+    lab_owner: jose.mussauer
+spec:
+  schedule: "0 3 * * *"  # 03:00 diariamente
+  timeZone: "America/Sao_Paulo"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 300
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: tekton-pruner
+            environment: lab
+            lab_id: lab-k8s-01
+            lab_owner: jose.mussauer
+        spec:
+          serviceAccountName: tekton-pruner
+          restartPolicy: OnFailure
+          nodeSelector:
+            kubernetes.io/arch: amd64
+          containers:
+            - name: pruner
+              image: alpine/k8s:1.29.4
+              imagePullPolicy: IfNotPresent
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+              env:
+                - name: NS
+                  value: "cicd"
+                - name: FAILED_RETENTION_DAYS
+                  value: "7"
+                - name: SUCCESS_RETENTION_DAYS
+                  value: "30"
+                - name: SUCCESS_KEEP_LAST
+                  value: "10"
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  echo "[INFO] tekton-pruner iniciado em $(date -Iseconds)"
+
+                  now=$(date +%s)
+                  failed_cutoff=$(( now - FAILED_RETENTION_DAYS * 86400 ))
+                  success_cutoff=$(( now - SUCCESS_RETENTION_DAYS * 86400 ))
+
+                  prune() {
+                    kind=$1
+                    echo "--- ${kind} ---"
+
+                    # JSON enriquecido com epoch e status
+                    json=$(kubectl get "$kind" -n "$NS" -o json)
+
+                    # Failed: status=False E age < failed_cutoff
+                    failed=$(echo "$json" | jq -r --argjson c "$failed_cutoff" '
+                      .items[]
+                      | select(
+                          (.status.conditions // []) | map(select(.type=="Succeeded")) | .[0].status == "False"
+                        )
+                      | select((.metadata.creationTimestamp | fromdateiso8601) < $c)
+                      | .metadata.name
+                    ')
+
+                    # Succeeded antigos: rank > keep_last E age < success_cutoff
+                    succeeded_old=$(echo "$json" | jq -r --argjson c "$success_cutoff" --argjson keep "$SUCCESS_KEEP_LAST" '
+                      [ .items[]
+                        | select(
+                            (.status.conditions // []) | map(select(.type=="Succeeded")) | .[0].status == "True"
+                          )
+                        | {name: .metadata.name, ts: (.metadata.creationTimestamp | fromdateiso8601)}
+                      ]
+                      | sort_by(.ts) | reverse
+                      | .[$keep:]
+                      | map(select(.ts < $c))
+                      | .[].name
+                    ')
+
+                    # Aplica delecoes
+                    for name in $failed; do
+                      echo "  [DELETE-failed] $name"
+                      kubectl delete "$kind" -n "$NS" "$name" --wait=false 2>&1 | sed "s/^/    /"
+                    done
+                    for name in $succeeded_old; do
+                      echo "  [DELETE-success-old] $name"
+                      kubectl delete "$kind" -n "$NS" "$name" --wait=false 2>&1 | sed "s/^/    /"
+                    done
+
+                    f_count=$(echo "$failed" | grep -c . || true)
+                    s_count=$(echo "$succeeded_old" | grep -c . || true)
+                    echo "  resumo: failed_deletados=$f_count success_antigos_deletados=$s_count"
+                  }
+
+                  prune pipelineruns
+                  prune taskruns
+
+                  echo "[INFO] tekton-pruner concluido em $(date -Iseconds)"
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 1001
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+                seccompProfile:
+                  type: RuntimeDefault
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+                - name: home
+                  mountPath: /home/kubectl
+                - name: kube
+                  mountPath: /.kube
+          volumes:
+            - name: tmp
+              emptyDir: {}
+            - name: home
+              emptyDir: {}
+            - name: kube
+              emptyDir: {}
