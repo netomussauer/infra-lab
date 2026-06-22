@@ -6,7 +6,8 @@ Laboratório completo de infraestrutura home-lab com cluster Kubernetes K3s mult
 
 | IP | Host / Serviço | OS / Plataforma | Papel |
 | --- | --- | --- | --- |
-| `192.168.1.20` | notebook-i7 | Proxmox VE 8.x | Hypervisor — VMs K3s |
+| `192.168.1.20` | `virt` (notebook-i7) | Proxmox VE 9.2.3 | Hypervisor — VMs K3s — nó principal do cluster `proxmox-lab` |
+| `192.168.1.21` | `pve2` | Proxmox VE 9.2.3 | Hypervisor — GPU NVIDIA GTX 1060 6 GB para testes de IA (PCI passthrough) |
 | `192.168.1.30` | k3s-server *(VM)* | Ubuntu 22.04 | K3s control-plane |
 | `192.168.1.31` | k3s-worker-cicd *(VM)* | Ubuntu 22.04 | K3s worker — CI/CD |
 | `192.168.1.32` | ci-runner *(VM)* | Ubuntu 22.04 | Tekton runner |
