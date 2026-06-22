@@ -49,7 +49,7 @@ data:
     address=/ubuntu-neto.lab.local/192.168.1.65
     address=/raspneto.lab.local/192.168.1.110
     address=/nas.lab.local/192.168.1.112
-    address=/netbox.lab.local/192.168.1.72
+    address=/netbox.lab.local/192.168.1.70
 
     # AMFIT (reserva — a alocar quando workloads subirem)
     address=/api.amfit.local/192.168.1.205

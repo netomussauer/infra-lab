@@ -11,7 +11,7 @@ Laboratório completo de infraestrutura home-lab com cluster Kubernetes K3s mult
 | `192.168.1.31` | k3s-worker-cicd *(VM)* | Ubuntu 22.04 | K3s worker — CI/CD |
 | `192.168.1.32` | ci-runner *(VM)* | Ubuntu 22.04 | Tekton runner |
 | `192.168.1.65` | notebook-i5 — hostname: `ubuntu-neto` | Ubuntu 24.04 | K3s worker — monitoring |
-| `192.168.1.72` | netbox-vm *(VM)* | — | NetBox IPAM |
+| `192.168.1.70` | netbox-vm *(VM)* | — | NetBox IPAM |
 | `192.168.1.110` | raspberry-pi — hostname: `raspneto` | Raspbian 12 | K3s worker — edge (ARMv7) |
 | `192.168.1.112` | nas | NAS OS (Seagate Black Armor) | NFS storage NFSv3 |
 | `192.168.1.50–59` | MetalLB infra pool | — | Serviços de infraestrutura (DNS, etc.) |
@@ -175,7 +175,7 @@ cp terraform/proxmox/terraform.tfvars.example terraform/proxmox/terraform.tfvars
 # Preencher: proxmox_api_token_id, proxmox_api_token_secret, ssh_public_key
 #            netbox_url, netbox_token
 
-export NETBOX_URL=http://192.168.1.72:8000
+export NETBOX_URL=https://192.168.1.70
 export NETBOX_TOKEN=<token em NetBox > User > API Tokens>
 ```
 
@@ -232,7 +232,7 @@ export KUBECONFIG=~/.kube/infra-lab.yaml
 | ArgoCD | `http://192.168.1.203` (ou `http://argocd.lab.local`) | admin / secret `argocd-initial-admin-secret` |
 | Tekton Dashboard | `http://192.168.1.204` (ou `http://tekton.lab.local`) | — |
 | Grafana | `http://192.168.1.210` (ou `http://grafana.lab.local`) | admin / lab@admin |
-| NetBox | `http://192.168.1.72:8000` | admin / (definido na instalação) |
+| NetBox | `https://192.168.1.70` | admin / (definido na instalação) |
 
 > Credenciais completas e procedimentos de rotação em [docs/runbook.md — Seção 6](docs/runbook.md#6-acessos-e-credenciais).
 

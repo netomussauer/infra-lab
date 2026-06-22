@@ -163,7 +163,7 @@ resource "netbox_ip_address" "nas" {
 
 # VM do NetBox IPAM — o próprio serviço que estamos configurando
 resource "netbox_ip_address" "netbox_vm" {
-  ip_address  = "192.168.1.72/24"
+  ip_address  = "192.168.1.70/24"
   status      = "active"
   description = "NetBox IPAM VM"
 
