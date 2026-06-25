@@ -23,6 +23,7 @@ Laboratório completo de infraestrutura home-lab com cluster Kubernetes K3s mult
 | `192.168.1.202` | Harbor | — | Container registry |
 | `192.168.1.203` | ArgoCD | — | GitOps controller |
 | `192.168.1.204` | Tekton EventListener | — | Webhook receptor |
+| `192.168.1.209` | Open WebUI | — | Chat UI sobre o Ollama (namespace `ai`) |
 | `192.168.1.210` | Grafana | — | Dashboards de monitoramento |
 | `192.168.1.254` | gateway | — | Roteador doméstico |
 
@@ -233,6 +234,7 @@ export KUBECONFIG=~/.kube/infra-lab.yaml
 | Harbor | `http://192.168.1.202` (ou `http://harbor.lab.local`) | admin / Harbor12345! |
 | ArgoCD | `http://192.168.1.203` (ou `http://argocd.lab.local`) | admin / secret `argocd-initial-admin-secret` |
 | Tekton Dashboard | `http://192.168.1.204` (ou `http://tekton.lab.local`) | — |
+| Open WebUI | `http://192.168.1.209` (ou `http://chat.lab.local`) | 1º cadastro vira admin (signup local) |
 | Grafana | `http://192.168.1.210` (ou `http://grafana.lab.local`) | admin / lab@admin |
 | NetBox | `https://192.168.1.70` | admin / (definido na instalação) |
 

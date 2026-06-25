@@ -49,3 +49,15 @@ metadata:
     lab_id: "lab-k8s-01"
     lab_owner: "jose.mussauer"
     env: "lab"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai
+  labels:
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    team: "platform"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+    env: "lab"

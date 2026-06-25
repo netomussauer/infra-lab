@@ -1,0 +1,130 @@
+# ai/open-webui/helm-values.yaml
+# Helm values para open-webui/open-webui
+#
+# Repositório: https://helm.openwebui.com/
+# Chart:       open-webui/open-webui (14.8.0 / app 0.9.6)
+#
+# Instalar:
+#   helm repo add open-webui https://helm.openwebui.com/
+#   helm upgrade --install open-webui open-webui/open-webui \
+#     -n ai \
+#     -f kubernetes/ai/open-webui/helm-values.yaml
+#
+# Acesso após bootstrap:
+#   http://192.168.1.209           (LoadBalancer MetalLB)
+#   http://chat.lab.local          (DNS via Pi-hole)
+#   http://openwebui.lab.local
+#
+# Backend Ollama: 192.168.1.84:11434 (CT 101 @ pve2, GPU GTX 1060)
+
+# ============================================================
+# Ollama backend — usar instância externa (não instalar Ollama embedded)
+# ============================================================
+ollama:
+  enabled: false
+
+ollamaUrls:
+  - http://192.168.1.84:11434
+
+# Pipelines e Tika desligados para manter footprint enxuto.
+# Pipelines (workload extra Python) só é necessário para function-calling avançado;
+# Tika só para extração de texto de arquivos office. Reabilitar sob demanda.
+pipelines:
+  enabled: false
+
+tika:
+  enabled: false
+
+# Não usar OpenAI cloud — manter o stack 100% local.
+enableOpenaiApi: false
+
+# Websocket ativo (default) — necessário para streaming de tokens no chat.
+websocket:
+  enabled: true
+
+# ============================================================
+# Workload
+# ============================================================
+replicaCount: 1
+
+image:
+  repository: ghcr.io/open-webui/open-webui
+  pullPolicy: IfNotPresent
+
+nodeSelector:
+  kubernetes.io/arch: amd64
+
+tolerations:
+  - key: "node.kubernetes.io/not-ready"
+    operator: "Exists"
+    effect: "NoExecute"
+    tolerationSeconds: 300
+  - key: "node.kubernetes.io/unreachable"
+    operator: "Exists"
+    effect: "NoExecute"
+    tolerationSeconds: 300
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "512Mi"
+  limits:
+    cpu: "1000m"
+    memory: "1Gi"
+
+# podLabels NAO podem ser adicionadas aqui — Open WebUI roda como StatefulSet
+# e o selector é fixo em (app.kubernetes.io/name, app.kubernetes.io/instance);
+# labels extras no template quebram a validação "selector matches template labels".
+# Metadados de lab_id/lab_owner vivem apenas no namespace 'ai' e nos manifests.
+
+podLabels: {}
+
+# ============================================================
+# Service / LoadBalancer (MetalLB lab-pool 192.168.1.200-220)
+# ============================================================
+service:
+  type: LoadBalancer
+  loadBalancerIP: "192.168.1.209"
+  annotations:
+    metallb.universe.tf/address-pool: "lab-pool"
+  port: 80
+  containerPort: 8080
+
+# Ingress desativado — acesso direto pelo LoadBalancer + DNS interno do Pi-hole.
+ingress:
+  enabled: false
+
+# ============================================================
+# Persistência (SQLite + uploads + chat history)
+# ============================================================
+persistence:
+  enabled: true
+  storageClass: "local-path"
+  accessModes:
+    - ReadWriteOnce
+  size: 5Gi
+
+# ============================================================
+# Configuração do Open WebUI
+# Doc: https://docs.openwebui.com/getting-started/env-configuration/
+# ============================================================
+extraEnvVars:
+  - name: WEBUI_NAME
+    value: "infra-lab AI"
+  - name: DEFAULT_LOCALE
+    value: "pt-BR"
+  # Primeiro usuário a se cadastrar vira admin. Após criar a conta, mudar
+  # ENABLE_SIGNUP para "false" via patch no env do Deployment para travar
+  # cadastros públicos.
+  - name: ENABLE_SIGNUP
+    value: "true"
+  - name: DEFAULT_USER_ROLE
+    value: "pending"
+  # Aceitar requests grandes (uploads para RAG futuramente)
+  - name: WEBUI_AUTH
+    value: "true"
+
+# SSO/OAuth: desativado por enquanto. Quando habilitar, integrar com Gitea
+# (OAuth Apps -> redirect URI: http://192.168.1.209/oauth/oidc/callback)
+sso:
+  enabled: false

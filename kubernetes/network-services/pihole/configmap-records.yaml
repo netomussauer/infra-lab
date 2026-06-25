@@ -36,6 +36,8 @@ data:
     address=/harbor.infra.local/192.168.1.202
     address=/argocd.lab.local/192.168.1.203
     address=/tekton.lab.local/192.168.1.204
+    address=/chat.lab.local/192.168.1.209
+    address=/openwebui.lab.local/192.168.1.209
     address=/grafana.lab.local/192.168.1.210
 
     # Serviços de infraestrutura — infra-services-pool (192.168.1.50-59)
@@ -50,6 +52,7 @@ data:
     address=/raspneto.lab.local/192.168.1.110
     address=/nas.lab.local/192.168.1.112
     address=/netbox.lab.local/192.168.1.70
+    address=/ollama.lab.local/192.168.1.84
 
     # AMFIT (reserva — a alocar quando workloads subirem)
     address=/api.amfit.local/192.168.1.205
