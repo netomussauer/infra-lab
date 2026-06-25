@@ -13,6 +13,7 @@ Laboratório completo de infraestrutura home-lab com cluster Kubernetes K3s mult
 | `192.168.1.32` | ci-runner *(VM)* | Ubuntu 22.04 | Tekton runner |
 | `192.168.1.65` | notebook-i5 — hostname: `ubuntu-neto` | Ubuntu 24.04 | K3s worker — monitoring |
 | `192.168.1.70` | netbox-vm *(VM)* | — | NetBox IPAM |
+| `192.168.1.84` | `ollama` — CT 101 LXC no `pve2` | Ubuntu (Proxmox community-script) | Ollama 0.30.10 — API `:11434` com GPU NVIDIA GTX 1060 (PCI passthrough) |
 | `192.168.1.110` | raspberry-pi — hostname: `raspneto` | Raspbian 12 | K3s worker — edge (ARMv7) |
 | `192.168.1.112` | nas | NAS OS (Seagate Black Armor) | NFS storage NFSv3 |
 | `192.168.1.50–59` | MetalLB infra pool | — | Serviços de infraestrutura (DNS, etc.) |
