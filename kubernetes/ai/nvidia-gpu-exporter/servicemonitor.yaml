@@ -1,0 +1,37 @@
+# ai/nvidia-gpu-exporter/servicemonitor.yaml
+# ServiceMonitor consumido pelo prometheus-operator do kube-prometheus-stack.
+# A label release=kube-prometheus-stack é o seletor padrão do operator.
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nvidia-gpu-exporter
+  namespace: ai
+  labels:
+    app.kubernetes.io/name: nvidia-gpu-exporter
+    release: kube-prometheus-stack
+    environment: lab
+    lab_id: lab-k8s-01
+    lab_owner: jose.mussauer
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nvidia-gpu-exporter
+  namespaceSelector:
+    matchNames:
+      - ai
+  endpoints:
+    - port: metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      path: /metrics
+      honorLabels: true
+      relabelings:
+        # Identifica o "instance" como pve2 (host físico da GPU)
+        - sourceLabels: [__address__]
+          targetLabel: instance
+          replacement: pve2
+        - targetLabel: gpu_node
+          replacement: pve2
+        - targetLabel: ct_id
+          replacement: "101"

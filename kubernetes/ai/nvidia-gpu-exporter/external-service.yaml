@@ -1,0 +1,46 @@
+# ai/nvidia-gpu-exporter/external-service.yaml
+# Service + Endpoints "externos" — registra o nvidia_gpu_exporter que roda
+# dentro do CT 101 (ollama @ pve2, 192.168.1.84:9835) como um endpoint que
+# o Prometheus operator possa descobrir via ServiceMonitor.
+#
+# Aplicar: kubectl apply -f kubernetes/ai/nvidia-gpu-exporter/
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nvidia-gpu-exporter
+  namespace: ai
+  labels:
+    app.kubernetes.io/name: nvidia-gpu-exporter
+    app.kubernetes.io/component: metrics
+    environment: lab
+    lab_id: lab-k8s-01
+    lab_owner: jose.mussauer
+spec:
+  type: ClusterIP
+  clusterIP: None              # headless — Endpoints carregam diretamente o IP externo
+  ports:
+    - name: metrics
+      port: 9835
+      protocol: TCP
+      targetPort: 9835
+---
+# Endpoints manual aponta para o exporter no CT 101 (fora do K8s).
+# Pareado por nome com o Service acima → o Prometheus operator vai resolver via ServiceMonitor.
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: nvidia-gpu-exporter
+  namespace: ai
+  labels:
+    app.kubernetes.io/name: nvidia-gpu-exporter
+    environment: lab
+    lab_id: lab-k8s-01
+    lab_owner: jose.mussauer
+subsets:
+  - addresses:
+      - ip: 192.168.1.84
+    ports:
+      - name: metrics
+        port: 9835
+        protocol: TCP
