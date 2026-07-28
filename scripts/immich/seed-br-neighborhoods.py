@@ -22,11 +22,20 @@ Regenerar após update do Immich (que pode resetar geodata_places):
 """
 
 import json
+import socket
 import sys
 import time
 import urllib.request
 import urllib.parse
 from datetime import date
+
+# CT do Immich é unprivileged com IPv6 desabilitado — força urllib a usar IPv4
+# (senão urllib tenta AAAA primeiro e falha com EADDRNOTAVAIL).
+_orig_getaddrinfo = socket.getaddrinfo
+def _getaddrinfo_ipv4_only(*args, **kwargs):
+    responses = _orig_getaddrinfo(*args, **kwargs)
+    return [r for r in responses if r[0] == socket.AF_INET]
+socket.getaddrinfo = _getaddrinfo_ipv4_only
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 ID_START = 90000001   # safe zone acima do máximo do GeoNames (~11M)
