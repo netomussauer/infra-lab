@@ -37,7 +37,15 @@ def _getaddrinfo_ipv4_only(*args, **kwargs):
     return [r for r in responses if r[0] == socket.AF_INET]
 socket.getaddrinfo = _getaddrinfo_ipv4_only
 
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+# Fallback ordenado de servidores Overpass. Se um estiver rate-limited/down,
+# passa pro próximo. maps.mail.ru é geo-alternativo (fica na Rússia) e ajuda
+# quando o pool europeu (overpass-api.de / kumi / private.coffee) recusa.
+OVERPASS_URLS = [
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+    "https://overpass-api.de/api/interpreter",
+]
 ID_START = 90000001   # safe zone acima do máximo do GeoNames (~11M)
 MOD_DATE = date.today().isoformat()
 
@@ -153,22 +161,27 @@ def overpass_query(city_name: str, uf: str) -> list[dict]:
     out center;
     """
 
-    for attempt, q in enumerate((query, fallback), 1):
-        try:
-            data = urllib.parse.urlencode({"data": q}).encode()
-            req = urllib.request.Request(OVERPASS_URL, data=data)
-            with urllib.request.urlopen(req, timeout=180) as resp:
-                payload = json.loads(resp.read().decode("utf-8"))
-            elements = payload.get("elements", [])
-            if elements:
-                return [
-                    {"name": e["tags"]["name"], "lat": e["lat"], "lng": e["lon"]}
-                    for e in elements
-                    if e.get("tags", {}).get("name")
-                ]
-        except Exception as e:
-            print(f"-- WARN: attempt {attempt} for {city_name}/{uf}: {e}", file=sys.stderr)
-        time.sleep(2)
+    # Combina 2 queries (main + fallback) × N servidores em rotação
+    for q_idx, q in enumerate((query, fallback), 1):
+        data = urllib.parse.urlencode({"data": q}).encode()
+        for url in OVERPASS_URLS:
+            try:
+                req = urllib.request.Request(url, data=data)
+                with urllib.request.urlopen(req, timeout=90) as resp:
+                    payload = json.loads(resp.read().decode("utf-8"))
+                elements = payload.get("elements", [])
+                if elements:
+                    return [
+                        {"name": e["tags"]["name"], "lat": e["lat"], "lng": e["lon"]}
+                        for e in elements
+                        if e.get("tags", {}).get("name")
+                    ]
+                # servidor OK mas 0 resultados → tenta próximo query, não próximo servidor
+                break
+            except Exception as e:
+                host = url.split("/")[2]
+                print(f"-- WARN: q{q_idx} @ {host} for {city_name}/{uf}: {e}", file=sys.stderr)
+                time.sleep(1)
     return []
 
 
