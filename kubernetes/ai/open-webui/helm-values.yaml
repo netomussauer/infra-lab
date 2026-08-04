@@ -2,7 +2,7 @@
 # Helm values para open-webui/open-webui
 #
 # Repositório: https://helm.openwebui.com/
-# Chart:       open-webui/open-webui (14.8.0 / app 0.9.6)
+# Chart:       open-webui/open-webui (16.0.0 / app 0.11.0)
 #
 # Instalar:
 #   helm repo add open-webui https://helm.openwebui.com/
