@@ -16,6 +16,21 @@
 #   http://openwebui.lab.local
 #
 # Backend Ollama: 192.168.1.84:11434 (CT 101 @ pve2, GPU GTX 1060)
+#
+# ============================================================
+# Integração OmniRoute (adicionada em 2026-08-12, fora deste yaml)
+# ============================================================
+# Além do Ollama direto configurado aqui, o Open-WebUI também tem
+# uma conexão OpenAI-compat apontando pro OmniRoute (AI Gateway do lab):
+#
+#   Admin Panel → Settings → Connections → OpenAI
+#     Base URL: http://192.168.1.117:20128/v1  (também `omniroute.lab.local`)
+#     API Key : sk-...   (em ~/.env.omniroute no WSL)
+#
+# Isso NÃO é gerenciado por este helm-values (persiste no SQLite do PVC
+# via Admin UI). Trade-off consciente: config aqui = Ollama direto (baixa
+# latência LAN), config na UI = ~140 modelos extras via OmniRoute (Gemini,
+# Groq, providers free) com fallback e observabilidade.
 
 # ============================================================
 # Ollama backend — usar instância externa (não instalar Ollama embedded)
@@ -35,7 +50,7 @@ pipelines:
 tika:
   enabled: false
 
-# Não usar OpenAI cloud — manter o stack 100% local.
+# OpenAI cloud direto: OFF. Providers cloud entram via OmniRoute (ver header).
 enableOpenaiApi: false
 
 # Websocket ativo (default) — necessário para streaming de tokens no chat.

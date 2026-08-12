@@ -15,7 +15,7 @@ Laboratório completo de infraestrutura home-lab com cluster Kubernetes K3s mult
 | `192.168.1.70` | netbox-vm *(VM)* | — | NetBox IPAM |
 | `192.168.1.84` | `ollama` — CT 101 LXC no `pve2` | Ubuntu (Proxmox community-script) | Ollama 0.30.10 — API `:11434` com GPU NVIDIA GTX 1060 (PCI passthrough) |
 | `192.168.1.85` | `immich` — CT 103 LXC no `pve2` | Debian 13 (Proxmox community-script, systemd nativo) | Immich 3.0.3 — Web `:2283`; rootfs `local-lvm` (15GB), library NFS SeagateNAS (`/mnt/immich-library`, 200GB); GPU compartilhada com ollama |
-| `192.168.1.117` | `omniroute` (CT 107 LXC no `pve2`) | Debian 13 | OmniRoute — AI Gateway multi-provider LLM · Web UI `http://192.168.1.117:20128` (DHCP — IP pode variar) |
+| `192.168.1.117` | `omniroute` (CT 107 LXC no `pve2`) | Debian 13 | OmniRoute v3.8.49 — AI Gateway multi-provider LLM (~144 modelos) · Web UI `http://192.168.1.117:20128` · OpenAI-compat `/v1` · Integrado com Continue.dev + Open-WebUI (DHCP — IP pode variar) |
 | `192.168.1.110` | raspberry-pi — hostname: `raspneto` | Raspbian 12 | K3s worker — edge (ARMv7) |
 | `192.168.1.112` | nas | NAS OS (Seagate Black Armor) | NFS storage NFSv3 |
 | `192.168.1.50–59` | MetalLB infra pool | — | Serviços de infraestrutura (DNS, etc.) |
