@@ -133,3 +133,5 @@ tmp/
 temp/
 .tmp/
 context/build/
+.config/sops/age/keys.txt
+*.enc.yaml.dec

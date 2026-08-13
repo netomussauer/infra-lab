@@ -1,0 +1,17 @@
+# .sops.yaml — regras de encriptação com age
+# Ver: https://github.com/getsops/sops
+#
+# Recipients:
+#   - wsl-netomussauer  (~/.config/sops/age/keys.txt em WSL Ubuntu — principal)
+#
+# Adicionar novo host:
+#   1. No host novo: age-keygen -o ~/.config/sops/age/keys.txt
+#   2. Copiar linha 'Public key:' aqui em creation_rules[].age (append com > ou -)
+#   3. Rekey (dono do repo): sops updatekeys secrets/*.enc.yaml
+#   4. Commit + push. Host novo faz git pull e agora consegue decriptar.
+
+creation_rules:
+  - path_regex: secrets/.+\.enc\.yaml$
+    encrypted_regex: "^(data|stringData)$"
+    age: >-
+      age1x83mnv7zg8rjqvz3n2dvz3vm9j6h8e7p96rjct8cxaxrqa8nxfqqxwcesy
