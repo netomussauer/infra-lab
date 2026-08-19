@@ -7,7 +7,7 @@ priority: medium
 
 NetBox v4.4.1 (IPAM/DCIM) rodando em VM no cluster Proxmox.
 
-- URL: **https://192.168.1.70** (HTTPS 443) — mudou de `192.168.1.72:8000` HTTP em 2026-06-22.
+- URL: **https://192.168.1.72** (HTTPS 443) — mudou de `192.168.1.72:8000` HTTP em 2026-06-22.
 - DNS: netbox.lab.local (via Pi-hole).
 - Django 5.2.6 + Python 3.11.2.
 - Token: em `~/.env.netbox` no WSL (não versionado).

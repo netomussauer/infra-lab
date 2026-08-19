@@ -12,7 +12,7 @@ Laboratório completo de infraestrutura home-lab com cluster Kubernetes K3s mult
 | `192.168.1.31` | k3s-worker-cicd *(VM)* | Ubuntu 22.04 | K3s worker — CI/CD |
 | `192.168.1.32` | ci-runner *(VM)* | Ubuntu 22.04 | Tekton runner |
 | `192.168.1.65` | notebook-i5 — hostname: `ubuntu-neto` | Ubuntu 24.04 | K3s worker — monitoring |
-| `192.168.1.70` | netbox-vm *(VM)* | — | NetBox IPAM |
+| `192.168.1.72` | netbox-vm *(VM)* | — | NetBox IPAM |
 | `192.168.1.84` | `ollama` — CT 101 LXC no `pve2` | Ubuntu (Proxmox community-script) | Ollama 0.30.10 — API `:11434` com GPU NVIDIA GTX 1060 (PCI passthrough) |
 | `192.168.1.85` | `immich` — CT 103 LXC no `pve2` | Debian 13 (Proxmox community-script, systemd nativo) | Immich 3.0.3 — Web `:2283`; rootfs `local-lvm` (15GB), library NFS SeagateNAS (`/mnt/immich-library`, 200GB); GPU compartilhada com ollama |
 | `192.168.1.117` | `omniroute` (CT 107 LXC no `pve2`) | Debian 13 | OmniRoute v3.8.49 — AI Gateway multi-provider LLM (~144 modelos) · Web UI `http://192.168.1.117:20128` · OpenAI-compat `/v1` · Integrado com Continue.dev + Open-WebUI (DHCP — IP pode variar) |
@@ -180,7 +180,7 @@ cp terraform/proxmox/terraform.tfvars.example terraform/proxmox/terraform.tfvars
 # Preencher: proxmox_api_token_id, proxmox_api_token_secret, ssh_public_key
 #            netbox_url, netbox_token
 
-export NETBOX_URL=https://192.168.1.70
+export NETBOX_URL=https://192.168.1.72
 export NETBOX_TOKEN=<token em NetBox > User > API Tokens>
 ```
 
@@ -238,7 +238,7 @@ export KUBECONFIG=~/.kube/infra-lab.yaml
 | Tekton Dashboard | `http://192.168.1.204` (ou `http://tekton.lab.local`) | — |
 | Open WebUI | `http://192.168.1.209` (ou `http://chat.lab.local`) | 1º cadastro vira admin (signup local) |
 | Grafana | `http://192.168.1.210` (ou `http://grafana.lab.local`) | admin / lab@admin |
-| NetBox | `https://192.168.1.70` | admin / (definido na instalação) |
+| NetBox | `https://192.168.1.72` | admin / (definido na instalação) |
 
 > Credenciais completas e procedimentos de rotação em [docs/runbook.md — Seção 6](docs/runbook.md#6-acessos-e-credenciais).
 

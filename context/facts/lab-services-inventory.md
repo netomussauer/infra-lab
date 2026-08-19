@@ -20,7 +20,7 @@ Endpoints LoadBalancer ativos no lab (MetalLB pool 192.168.1.200-220 e 50-59):
 | Grafana | http://192.168.1.210 | grafana |
 
 Fora do K3s:
-- NetBox (IPAM): https://192.168.1.70 (netbox / netbox.lab.local)
+- NetBox (IPAM): https://192.168.1.72 (netbox / netbox.lab.local)
 - Ollama API: http://192.168.1.84:11434 (ollama.lab.local) — CT 101 LXC @ pve2
 - Immich (fotos): http://192.168.1.85:2283 (immich / photos.lab.local) — CT 103 LXC @ pve2
 - OmniRoute (AI Gateway): http://192.168.1.117:20128 (omniroute.lab.local) — CT 107 LXC @ pve2

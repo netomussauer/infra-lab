@@ -51,7 +51,7 @@ data:
     address=/ubuntu-neto.lab.local/192.168.1.65
     address=/raspneto.lab.local/192.168.1.110
     address=/nas.lab.local/192.168.1.112
-    address=/netbox.lab.local/192.168.1.70
+    address=/netbox.lab.local/192.168.1.72
     address=/ollama.lab.local/192.168.1.84
     address=/immich.lab.local/192.168.1.85
     address=/photos.lab.local/192.168.1.85

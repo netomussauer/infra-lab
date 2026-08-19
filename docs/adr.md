@@ -234,7 +234,7 @@ O lab tem hardware heterogêneo com IPs fixos para hosts físicos, VMs, serviço
 | Documentação de prefixos | Sim | Não | Manual |
 | Overhead de RAM | ~512 MB (VM existente) | Zero | Zero |
 
-**Decisão:** NetBox IPAM (192.168.1.70), VM já deployada no Proxmox lab.
+**Decisão:** NetBox IPAM (192.168.1.72), VM já deployada no Proxmox lab.
 
 **Consequências:**
 

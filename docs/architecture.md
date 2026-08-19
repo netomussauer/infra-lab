@@ -57,7 +57,7 @@ Este laboratório executa um cluster Kubernetes K3s multi-nó distribuído em ha
 | `k3s-server` | 192.168.1.30 | 2 | 4 GB | K3s control-plane + etcd embedded |
 | `k3s-worker-cicd` | 192.168.1.31 | 4 | 6 GB | K3s worker — `workload=cicd` |
 | `ci-runner` | 192.168.1.32 | 2 | 4 GB | K3s worker — `workload=runner`, builds Tekton |
-| `netbox-vm` | 192.168.1.70 | 1 | 2 GB | NetBox IPAM (já deployado) |
+| `netbox-vm` | 192.168.1.72 | 1 | 2 GB | NetBox IPAM (já deployado) |
 
 ---
 
@@ -78,7 +78,7 @@ flowchart TD
                 VM_SERVER["k3s-server\n2vCPU / 4GB\n192.168.1.30"]
                 VM_CICD["k3s-worker-cicd\n4vCPU / 6GB\n192.168.1.31"]
                 VM_RUNNER["ci-runner\n2vCPU / 4GB\n192.168.1.32"]
-                VM_NETBOX["netbox-vm\n192.168.1.70"]
+                VM_NETBOX["netbox-vm\n192.168.1.72"]
             end
             PVE --> VM_SERVER & VM_CICD & VM_RUNNER & VM_NETBOX
         end
@@ -363,7 +363,7 @@ Os nós montam shares NFS do NAS (NFSv3) em `/mnt/k8s-pv` para uso futuro (e.g.,
 
 ### 7.5 IPAM — NetBox
 
-NetBox (192.168.1.70) é a fonte centralizada de IPAM. O Terraform registra VMs e IPs no NetBox antes de provisioná-las no Proxmox. O Ansible usa o plugin `netbox.netbox.nb_inventory` para inventário dinâmico.
+NetBox (192.168.1.72) é a fonte centralizada de IPAM. O Terraform registra VMs e IPs no NetBox antes de provisioná-las no Proxmox. O Ansible usa o plugin `netbox.netbox.nb_inventory` para inventário dinâmico.
 
 ---
 

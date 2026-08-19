@@ -109,5 +109,5 @@ kernel_modules_k8s:
 #   1. Variáveis de ambiente: NETBOX_URL e NETBOX_TOKEN
 #   2. ansible-vault encrypt_string para o token
 #   3. Este arquivo (apenas para URL, NUNCA para o token em texto plano)
-netbox_url:   "{{ lookup('env', 'NETBOX_URL') | default('https://192.168.1.70') }}"
+netbox_url:   "{{ lookup('env', 'NETBOX_URL') | default('https://192.168.1.72') }}"
 netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') }}"

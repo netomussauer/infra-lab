@@ -86,7 +86,7 @@ ssh -i ~/.ssh/lab_id_rsa labadmin@192.168.1.30
 ### 2.1 Pré-requisitos
 
 - Proxmox VE instalado no `notebook-i7` (192.168.1.20)
-- NetBox configurado (192.168.1.70) com token de API
+- NetBox configurado (192.168.1.72) com token de API
 - Template de VM Ubuntu 22.04 no Proxmox (cloud-init)
 
 ### 2.2 Configurar credenciais
@@ -102,7 +102,7 @@ cp terraform.tfvars.example terraform.tfvars
 Variáveis de ambiente obrigatórias:
 
 ```bash
-export NETBOX_URL=https://192.168.1.70
+export NETBOX_URL=https://192.168.1.72
 export NETBOX_TOKEN=<token-gerado-no-netbox>
 ```
 
@@ -121,7 +121,7 @@ O Terraform cria as VMs (`k3s-server`, `k3s-worker-cicd`, `ci-runner`) e registr
 
 ```bash
 # IPs devem aparecer no NetBox:
-# https://192.168.1.70/ipam/ip-addresses/
+# https://192.168.1.72/ipam/ip-addresses/
 
 # Verificar SSH nas VMs recém-criadas:
 ssh labadmin@192.168.1.30  # k3s-server
@@ -647,7 +647,7 @@ kubectl delete pipelinerun -n cicd \
 | ArgoCD | `http://192.168.1.203` | `admin` | ver secret abaixo |
 | Grafana | `http://192.168.1.210` | `admin` | `lab@admin` |
 | Proxmox | `https://192.168.1.20:8006` | `root` | definido na instalação |
-| NetBox | `https://192.168.1.70` | `admin` | definido na instalação |
+| NetBox | `https://192.168.1.72` | `admin` | definido na instalação |
 
 ### Bancos de dados compartilhados (namespace `shared-infra`)
 
