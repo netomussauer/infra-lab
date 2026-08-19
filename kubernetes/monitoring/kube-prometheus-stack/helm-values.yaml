@@ -96,6 +96,13 @@ grafana:
       labelValue: "1"
       searchNamespace: "ALL"
 
+  # Bloqueia auto-update de plugin bundled — evita crashloop quando o Grafana
+  # tenta atualizar plugin (ex: elasticsearch) em /usr/share/grafana/data/plugins-bundled
+  # e falha com "permission denied" (plugins-bundled é read-only da imagem base).
+  env:
+    GF_PLUGINS_UPDATES_CHECK_ENABLED: "false"
+    GF_PLUGINS_PREINSTALL_DISABLED: "true"
+
   grafana.ini:
     server:
       domain: "grafana.lab.local"
