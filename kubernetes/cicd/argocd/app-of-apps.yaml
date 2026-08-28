@@ -29,7 +29,11 @@ spec:
   project: default
 
   source:
-    repoURL: "http://gitea.lab.local/lab/infra-lab.git"
+    # gitea-http.cicd.svc.cluster.local:3000 — DNS interno do cluster (ClusterIP do Gitea).
+    # NAO usar gitea.lab.local sem porta: nao ha Ingress Controller instalado (traefik e
+    # servicelb sao desabilitados no K3s), entao porta 80 nao tem nada escutando e o
+    # argocd-repo-server trava em timeout tentando listar refs.
+    repoURL: "http://gitea-http.cicd.svc.cluster.local:3000/lab/infra-lab.git"
     targetRevision: HEAD
     path: "kubernetes/apps"
     # Kustomize ou diretório — ArgoCD auto-detecta
