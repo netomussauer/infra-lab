@@ -1,8 +1,15 @@
 # Arquitetura do Home Lab — Referência Central
 
-> **Versão:** 2.0.0
-> **Atualizado em:** 2026-04-29
+> **Versão:** 2.1.0
+> **Atualizado em:** 2026-08-28
 > **Responsável:** jose.mussauer@stone.com.br
+>
+> **Mudanças desde 2.0.0:** adiciona o nó `pve2` (GPU NVIDIA, PCI passthrough) e a stack de
+> IA que roda fora do K3s (Ollama, Immich, OmniRoute); corrige versão do Proxmox VE (9.2.3,
+> não 8.x); corrige IP do `ubuntu-neto` (.67, após crash em 2026-06) e do `netbox-vm` (.72,
+> após conflito de IP resolvido em 2026-08); remove Traefik como Ingress documentado — ele é
+> explicitamente desabilitado na instalação do K3s (`--disable traefik --disable servicelb`)
+> e não há nenhum Ingress Controller de fato instalado no cluster; adiciona namespace `ai`.
 
 ---
 
@@ -26,6 +33,8 @@
 
 Este laboratório executa um cluster Kubernetes K3s multi-nó distribuído em hardware heterogêneo (x86_64 e ARMv7), com pipeline CI/CD completo (Gitea → Tekton → Harbor → ArgoCD), monitoramento centralizado (kube-prometheus-stack + Loki) e storage persistente via `local-path` provisioner (disco local dos nós).
 
+Além do cluster K3s, um segundo hipervisor Proxmox (`pve2`) com GPU NVIDIA em PCI passthrough hospeda uma stack de IA fora do Kubernetes, como LXCs nativos (systemd, sem Docker): Ollama (inferência local), Immich (galeria de fotos com ML) e OmniRoute (AI Gateway multi-provider). Esses serviços são consumidos de dentro do cluster pelo Open WebUI (namespace `ai`) e por ferramentas de desenvolvimento (Continue.dev).
+
 ### Princípios adotados
 
 - **GitOps**: toda mudança de estado do cluster passa por repositório Git. Nenhum `kubectl apply` manual em produção.
@@ -43,14 +52,17 @@ Este laboratório executa um cluster Kubernetes K3s multi-nó distribuído em ha
 
 | Host | CPU | Arch | RAM | SO | Papel |
 |---|---|---|---|---|---|
-| `notebook-i7` | Intel i7-2670QM @2.2GHz (4c/8t) | x86_64 | 16 GB | Proxmox VE 8.x | Hypervisor — hospeda VMs do cluster |
+| `virt` (notebook-i7) | Intel i7-2670QM @2.2GHz (4c/8t) | x86_64 | 16 GB | Proxmox VE 9.2.3 | Hypervisor principal — hospeda as VMs do cluster K3s. IP: 192.168.1.20 |
+| `pve2` | Intel i5-3330 @3.0GHz (4c/4t, Ivy Bridge 2012) | x86_64 | 7.7 GB | Proxmox VE 9.2.3 | Hypervisor de IA — GPU NVIDIA GTX 1060 6GB em PCI passthrough. IP: 192.168.1.21 |
 | `notebook-i5` | Intel i5-2450M @2.5GHz (2c/4t) | x86_64 | 8 GB | Ubuntu Server 24.04 | K3s agent — hostname: `ubuntu-neto`, label: `workload=monitoring` |
 | `raspberry-pi` | ARMv7 4-core (BCM2836/2837) | ARMv7 | 1 GB | Raspbian 12 | K3s agent — hostname: `raspneto`, label: `workload=edge` |
 | `nas` | — | — | — | NAS OS (Seagate Black Armor) | Storage: NFS exports NFSv3 |
 
-> **Nota:** o hostname real do notebook-i5 no cluster é `ubuntu-neto` (hostname do SO), não `notebook-i5`.
+> **Notas:**
+> - O hostname real do notebook-i5 no cluster é `ubuntu-neto` (hostname do SO), não `notebook-i5`.
+> - Ambos os nós Proxmox formam o cluster de virtualização `proxmox-lab` no NetBox, mas **não** formam um cluster HA do Proxmox entre si — são dois hosts independentes.
 
-### 2.2 VMs no Proxmox (notebook-i7 — 16 GB RAM)
+### 2.2 VMs no Proxmox (`virt` — 16 GB RAM)
 
 | VM | IP | vCPU | RAM | Papel |
 |---|---|---|---|---|
@@ -58,6 +70,18 @@ Este laboratório executa um cluster Kubernetes K3s multi-nó distribuído em ha
 | `k3s-worker-cicd` | 192.168.1.31 | 4 | 6 GB | K3s worker — `workload=cicd` |
 | `ci-runner` | 192.168.1.32 | 2 | 4 GB | K3s worker — `workload=runner`, builds Tekton |
 | `netbox-vm` | 192.168.1.72 | 1 | 2 GB | NetBox IPAM (já deployado) |
+
+### 2.3 LXCs no Proxmox (`pve2` — GPU NVIDIA GTX 1060, 7.7 GB RAM)
+
+Containers LXC nativos (systemd, sem Docker — Proxmox community-scripts), fora do cluster K3s. Compartilham a mesma GPU via PCI passthrough (`/dev/nvidia*` bind mount).
+
+| LXC | CT ID | IP | Papel |
+|---|---|---|---|
+| `ollama` | 101 | 192.168.1.84 | Ollama v0.30.10 — inferência local (modelos qwen2.5), API OpenAI-compat `:11434` |
+| `immich` | 103 | 192.168.1.85 | Immich v3.0.3 — galeria de fotos self-hosted, Web/API `:2283`, Postgres+vectorchord local, biblioteca via NFS (`/mnt/immich-library`) |
+| `omniroute` | 107 | 192.168.1.117 (DHCP) | OmniRoute v3.8.49 — AI Gateway multi-provider (~144 modelos/14 providers), OpenAI-compat `:20128/v1` |
+
+> Ambos `immich` e `ollama` disputam a mesma GPU — hoje o Immich ML roda em CPU para evitar contenção de VRAM com o Ollama.
 
 ---
 
@@ -72,8 +96,8 @@ flowchart TD
             NFS_BK["/backups"]
         end
 
-        subgraph I7["notebook-i7 — Intel i7-2670QM | 16GB | 192.168.1.20"]
-            PVE["Proxmox VE 8.x"]
+        subgraph I7["virt (notebook-i7) — Intel i7-2670QM | 16GB | 192.168.1.20 | Proxmox VE 9.2.3"]
+            PVE["Proxmox VE"]
             subgraph VMs["VMs KVM"]
                 VM_SERVER["k3s-server\n2vCPU / 4GB\n192.168.1.30"]
                 VM_CICD["k3s-worker-cicd\n4vCPU / 6GB\n192.168.1.31"]
@@ -83,7 +107,17 @@ flowchart TD
             PVE --> VM_SERVER & VM_CICD & VM_RUNNER & VM_NETBOX
         end
 
-        subgraph I5["notebook-i5 — Intel i5-2450M | 8GB | 192.168.1.65"]
+        subgraph PVE2H["pve2 — Intel i5-3330 | 7.7GB | 192.168.1.21 | Proxmox VE 9.2.3 | GPU GTX 1060"]
+            PVE2["Proxmox VE"]
+            subgraph LXCS["LXCs nativos (systemd) — GPU compartilhada"]
+                LXC_OLLAMA["ollama (CT 101)\n192.168.1.84:11434"]
+                LXC_IMMICH["immich (CT 103)\n192.168.1.85:2283"]
+                LXC_OMNI["omniroute (CT 107)\n192.168.1.117:20128"]
+            end
+            PVE2 --> LXC_OLLAMA & LXC_IMMICH & LXC_OMNI
+        end
+
+        subgraph I5["notebook-i5 — Intel i5-2450M | 8GB | 192.168.1.67"]
             K3S_I5["k3s agent — hostname: ubuntu-neto\nworkload=monitoring\nPrometheus | Grafana | Loki | AlertManager\nPostgreSQL | Redis | Pi-hole"]
         end
 
@@ -92,9 +126,10 @@ flowchart TD
         end
 
         VM_SERVER <-->|"K3s cluster — Flannel VXLAN"| VM_CICD & VM_RUNNER & K3S_I5 & K3S_RPI
+        LXC_OLLAMA -.->|"OpenAI-compat API\n(consumido pelo namespace ai)"| VM_SERVER
 
         SWITCH["Switch L2 / Gateway 192.168.1.254"]
-        I7 & I5 & RPI & NAS_HOST --- SWITCH
+        I7 & PVE2H & I5 & RPI & NAS_HOST --- SWITCH
     end
 
     DEV["Desenvolvedor\n(Windows 11 + WSL Ubuntu)"] -->|"SSH / kubectl / browser"| SWITCH
@@ -111,8 +146,13 @@ flowchart TD
 | `k3s-server` | 192.168.1.30 | control-plane | `node-role.kubernetes.io/master=true` | Ready |
 | `k3s-worker-cicd` | 192.168.1.31 | worker | `workload=cicd` | Ready |
 | `ci-runner` | 192.168.1.32 | worker | `workload=runner` | Ready |
-| `ubuntu-neto` | 192.168.1.65 | worker | `workload=monitoring` | Ready |
+| `ubuntu-neto` | 192.168.1.67 | worker | `workload=monitoring` | Ready |
 | `raspneto` | 192.168.1.110 | worker | `workload=edge`, `kubernetes.io/arch=arm` | Ready |
+
+> **Nota:** o IP do `ubuntu-neto` mudou de `.65` para `.67` após um crash em 2026-06. Esse nó é
+> **SPOF** (ponto único de falha) do stack de observabilidade e do `shared-infra`
+> (Postgres/Redis) — carrega PVCs `local-path` ancorados nele. Se cair, as aplicações
+> `amfit` e `realtpmsys` ficam sem banco de dados.
 
 ### 4.2 Diagrama de workloads por nó
 
@@ -123,7 +163,6 @@ flowchart TD
         subgraph CP["k3s-server — control-plane"]
             APISERV["kube-apiserver + etcd"]
             COREDNS["CoreDNS"]
-            TRFK["Traefik Ingress"]
             METALB_CTRL["MetalLB Controller"]
             LP_PROV["local-path-provisioner"]
             NFS_PROV["NFS Subdir Provisioner"]
@@ -156,13 +195,20 @@ flowchart TD
             PROMTAIL_RPI["Promtail"]
         end
 
+        subgraph AI["namespace: ai — qualquer nó amd64"]
+            OWEBUI["Open WebUI\n192.168.1.209"]
+            GPU_EXP["Service/Endpoints manual\nnvidia-gpu-exporter\n→ aponta pro CT 101 @ pve2"]
+        end
+
         subgraph DAEMONSETS["DaemonSets — todos os nós"]
             NE["node-exporter"]
             PT["Promtail"]
             METALB_SPK["MetalLB Speaker"]
         end
 
-        CP --> WCICD & RUNNER & MON & EDGE
+        CP --> WCICD & RUNNER & MON & EDGE & AI
+        OWEBUI -.->|"OpenAI-compat"| EXT_OLLAMA["ollama @ pve2\n192.168.1.84:11434 (fora do cluster)"]
+        GPU_EXP -.-> EXT_OLLAMA
     end
 ```
 
@@ -175,7 +221,7 @@ flowchart TD
 | Service CIDR | `10.43.0.0/16` |
 | DNS Cluster | `10.43.0.10` (CoreDNS — 2 réplicas) |
 | DNS LAN | `192.168.1.53` (Pi-hole — primário nos 5 nós) |
-| Ingress | Traefik v2 (embutido no K3s) |
+| Ingress | **Nenhum instalado.** `traefik` e `servicelb` são explicitamente desabilitados na instalação do K3s (`--disable traefik --disable servicelb`, ver `ansible/inventory/group_vars/k3s_server.yml`). Todo acesso externo é via LoadBalancer (MetalLB), não via Ingress. |
 | LoadBalancer | MetalLB v0.14.3 — L2 mode (ARP) — 2 pools |
 | Pool `lab-pool` | `192.168.1.200–192.168.1.220` (workloads) |
 | Pool `infra-services-pool` | `192.168.1.50–192.168.1.59` (DNS e outros serviços de infra, `autoAssign=false`) |
@@ -200,6 +246,7 @@ flowchart TD
 | Redis | 7-alpine | manifesto direto | `shared-infra` |
 | Pi-hole | 2024.07.0 | manifesto direto | `network-services` |
 | Sealed Secrets | v0.36.6 | Kustomize sobre release oficial | `kube-system` |
+| Open WebUI | app 0.11.0 | open-webui-16.0.0 | `ai` |
 
 ---
 
@@ -359,6 +406,7 @@ Os nós montam shares NFS do NAS (NFSv3) em `/mnt/k8s-pv` para uso futuro (e.g.,
 | `192.168.1.202` | Harbor | `registry` | 80/443 |
 | `192.168.1.203` | ArgoCD Server | `cicd` | 80/443 |
 | `192.168.1.204` | Tekton EventListener | `cicd` | 80 |
+| `192.168.1.209` | Open WebUI | `ai` | 80 |
 | `192.168.1.210` | Grafana | `monitoring` | 80 |
 
 ### 7.5 IPAM — NetBox
@@ -421,6 +469,15 @@ NetBox (192.168.1.72) é a fonte centralizada de IPAM. O Terraform registra VMs 
 | Componente | Nó | RAM request | RAM limit | Notas |
 |---|---|---|---|---|
 | Pi-hole | `ubuntu-neto` | 128 Mi | 256 Mi | LB 192.168.1.53 · PVCs 1Gi + 256Mi |
+
+### `ai`
+
+| Componente | Nó | RAM request | RAM limit | Notas |
+|---|---|---|---|---|
+| Open WebUI | qualquer amd64 | 100m CPU / 512 Mi | 1000m CPU / 1 Gi | LB 192.168.1.209 · PVC 5Gi local-path · backend Ollama direto (`192.168.1.84:11434`) + OmniRoute via Admin UI |
+| nvidia-gpu-exporter | — | — | — | Service/Endpoints manual (sem pod no cluster) — expõe o exporter do CT 101 (`pve2`) ao Prometheus via ServiceMonitor |
+
+> Os workloads reais de IA (Ollama, Immich, OmniRoute) **não rodam no K3s** — são LXCs nativos no `pve2` (ver [§2.3](#23-lxcs-no-proxmox-pve2--gpu-nvidia-gtx-1060-77-gb-ram)). O namespace `ai` no cluster contém apenas o cliente (Open WebUI) e um exportador de métricas ponte.
 
 ### Estimativa de uso por nó
 
