@@ -134,13 +134,16 @@ spec:
   steps:
     - name: build-and-push
       image: "gcr.io/kaniko-project/executor:v1.21.0"
+      # 1Gi era suficiente para builds Go mas OOMKillava builds Next.js/Node;
+      # 2.5Gi foi validado empiricamente (override por PipelineRun) antes de
+      # virar o default aqui.
       computeResources:
         requests:
           cpu: "500m"
-          memory: "512Mi"
+          memory: "768Mi"
         limits:
           cpu: "2000m"
-          memory: "1Gi"
+          memory: "2560Mi"
       args:
         - "--dockerfile=$(params.dockerfile)"
         - "--context=dir://$(workspaces.source.path)/$(params.context)"

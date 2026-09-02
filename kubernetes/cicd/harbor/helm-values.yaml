@@ -227,13 +227,16 @@ trivy:
 database:
   type: internal
   internal:
+    # 512Mi crash-loopava sob carga de build concorrente (core+registry+
+    # jobservice batendo no Postgres ao mesmo tempo): "database system was
+    # interrupted" / exit 141 nos logs do harbor-database-0. Dobrado.
     resources:
       requests:
-        cpu: "100m"
-        memory: "256Mi"
+        cpu: "150m"
+        memory: "384Mi"
       limits:
-        cpu: "500m"
-        memory: "512Mi"
+        cpu: "750m"
+        memory: "1Gi"
     nodeSelector:
       workload: "cicd"
 
