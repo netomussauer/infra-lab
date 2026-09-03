@@ -138,6 +138,20 @@ gitea:
       ENABLED: true
       TOKEN: ""
 
+    # Default do Gitea (>= 1.20-ish) restringe webhooks a hosts "external" —
+    # bloqueia por padrão qualquer alvo que resolva pra IP privado/loopback
+    # (protecao SSRF). Isso incluia os EventListeners do Tekton
+    # (el-*-event-listener.cicd.svc.cluster.local, resolvem pra ClusterIPs
+    # 10.43.0.0/16) — todo push real disparava o hook no Gitea mas a entrega
+    # falhava silenciosamente antes de sair do pod
+    # ("webhook can only call allowed HTTP servers", achado em 2026-09-03 ao
+    # testar o mirror reverso pela primeira vez com um push de verdade).
+    # "private" libera qualquer alvo em rede privada — aceitavel aqui porque
+    # o Gitea so tem webhooks apontando pra servicos internos confiaveis
+    # deste mesmo cluster/namespace.
+    webhook:
+      ALLOWED_HOST_LIST: "external,private"
+
   # Probes de saúde
   livenessProbe:
     enabled: true
