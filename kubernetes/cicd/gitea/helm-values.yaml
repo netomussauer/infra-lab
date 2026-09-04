@@ -99,7 +99,16 @@ gitea:
   config:
     server:
       DOMAIN: "gitea.lab.local"
-      ROOT_URL: "http://gitea.lab.local"
+      # ROOT_URL precisa incluir a porta — Gitea usa esse valor pra montar
+      # qualquer URL absoluta que ele mesmo emite, inclusive o `clone_url`
+      # no payload do webhook. Sem a porta, todo build disparado por
+      # webhook (nao os manuais, que ja hardcodavam a porta certa como
+      # workaround) tentava git clone em gitea.lab.local:80 — onde nao
+      # existe nenhum Ingress/proxy escutando, so o Service do Gitea na
+      # 3000 — e falhava no passo de clone (achado em 2026-09-04
+      # investigando por que builds via webhook nunca chegavam a rodar
+      # apesar do trigger em si estar disparando corretamente).
+      ROOT_URL: "http://gitea.lab.local:3000"
       HTTP_PORT: 3000
       SSH_DOMAIN: "gitea.lab.local"
       SSH_PORT: 22
