@@ -224,6 +224,22 @@ trivy:
   nodeSelector:
     workload: "cicd"
 
+# Faltava nodeSelector aqui — sem ele o scheduler já colocou o pod no
+# raspneto (único worker ARM do lab), e a imagem do exporter só existe
+# para amd64: "exec format error" em CrashLoopBackOff (ver
+# context/facts, incidente 2026-09-14). Todos os outros componentes do
+# chart já fixam workload=cicd; este ficou de fora por omissão.
+exporter:
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"
+  nodeSelector:
+    workload: "cicd"
+
 database:
   type: internal
   internal:
