@@ -107,6 +107,15 @@ spec:
       ports:
         - protocol: TCP
           port: 80
+    # ingress-nginx interno (namespace edge) — expõe hello.pub.<dominio>
+    # publicamente via cloudflared, ver kubernetes/edge/. ADR-013.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "edge"
+      ports:
+        - protocol: TCP
+          port: 80
     # Scraping do Prometheus (namespace monitoring)
     - from:
         - namespaceSelector:
