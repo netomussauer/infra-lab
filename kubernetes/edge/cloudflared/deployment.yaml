@@ -1,0 +1,92 @@
+# edge/cloudflared/deployment.yaml
+# cloudflared — túnel outbound único para a borda do Cloudflare. Nenhuma
+# porta é aberta no roteador de casa; a conexão é sempre de dentro pra
+# fora. Não fala com nenhuma aplicação diretamente, só com o
+# ingress-nginx interno (ver configmap.yaml). Ver docs/adr.md ADR-013.
+#
+# Pré-requisitos antes de aplicar:
+#   1. ingress-nginx já instalado no namespace edge (../ingress-nginx/).
+#   2. configmap.yaml preenchido com tunnel ID e domínio reais.
+#   3. Secret `cloudflared-credentials` (chave credentials.json) já
+#      aplicado no namespace edge. Gerado localmente a partir de
+#      secrets/env.cloudflared.enc.yaml (SOPS) e selado com
+#      scripts/seal-secret.sh — o Secret puro NUNCA é comitado, só o
+#      SealedSecret resultante (mesmo padrão do ADR-011). Ver
+#      secrets/README.md.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared
+  namespace: edge
+  labels:
+    app.kubernetes.io/name: "cloudflared"
+    app.kubernetes.io/component: "tunnel"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+spec:
+  replicas: 2 # HA do túnel — pods leves, mesma credencial pode ter várias réplicas conectadas
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "cloudflared"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "cloudflared"
+        environment: "lab"
+    spec:
+      nodeSelector:
+        kubernetes.io/arch: amd64 # imagem oficial cloudflared não publica build p/ raspneto (armv7)
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: "cloudflared"
+                topologyKey: "kubernetes.io/hostname"
+      containers:
+        - name: cloudflared
+          image: cloudflare/cloudflared:2026.9.1
+          args:
+            - tunnel
+            - --config
+            - /etc/cloudflared/config.yaml
+            - run
+          ports:
+            - name: metrics
+              containerPort: 2000
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: config
+              mountPath: /etc/cloudflared
+              readOnly: true
+            - name: creds
+              mountPath: /etc/cloudflared/creds
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: cloudflared-config
+        - name: creds
+          secret:
+            secretName: cloudflared-credentials

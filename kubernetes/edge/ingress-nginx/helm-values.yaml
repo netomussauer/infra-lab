@@ -1,0 +1,51 @@
+# edge/ingress-nginx/helm-values.yaml
+# IngressController interno do lab — único consumidor é o cloudflared
+# (ver ../cloudflared/), por isso Service ClusterIP (sem IP MetalLB, sem
+# porta exposta na LAN). Todo tráfego público externo entra via túnel
+# Cloudflare, nunca direto neste controller. Ver docs/adr.md ADR-013.
+#
+# Instalar:
+#   helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx --force-update
+#   helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+#     -f kubernetes/edge/ingress-nginx/helm-values.yaml \
+#     --namespace edge --wait --timeout 10m
+controller:
+  replicaCount: 1 # hardware frugal (Sandy/Ivy Bridge) — subir pra 2 se virar SPOF crítico
+
+  ingressClassResource:
+    name: nginx
+    default: false # não substitui nenhum IngressClass existente no cluster
+
+  service:
+    type: ClusterIP # nunca LoadBalancer/NodePort — só o cloudflared fala com isso
+
+  admissionWebhooks:
+    enabled: true
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      namespace: edge
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 90Mi
+    limits:
+      cpu: 200m
+      memory: 250Mi
+
+  config:
+    hide-headers: "Server"
+    use-forwarded-headers: "true" # preserva IP real de origem repassado pelo cloudflared
+
+defaultBackend:
+  enabled: true
+  resources:
+    requests:
+      cpu: 5m
+      memory: 20Mi
+    limits:
+      cpu: 20m
+      memory: 40Mi

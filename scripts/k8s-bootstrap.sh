@@ -388,6 +388,63 @@ step_hello_lab() {
 }
 
 # -----------------------------------------------------------------------------
+# Etapa 12 — ingress-nginx interno (namespace edge)
+# -----------------------------------------------------------------------------
+# Único consumidor é o cloudflared (step_cloudflared) — Service ClusterIP,
+# sem IP MetalLB. Ver docs/adr.md ADR-013.
+step_ingress_nginx() {
+  log_info "=== Etapa 12: Instalando ingress-nginx (namespace edge) ==="
+
+  helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx --force-update
+  helm repo update ingress-nginx
+
+  helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+    -f "$PROJECT_ROOT/kubernetes/edge/ingress-nginx/helm-values.yaml" \
+    --namespace edge \
+    --wait \
+    --timeout 10m
+
+  kubectl apply -f "$PROJECT_ROOT/kubernetes/edge/cloudflared/networkpolicy.yaml"
+
+  log_ok "ingress-nginx instalado (ClusterIP interno, namespace edge)."
+}
+
+# -----------------------------------------------------------------------------
+# Etapa 13 — cloudflared (túnel público)
+# -----------------------------------------------------------------------------
+# Pré-requisitos manuais, feitos uma única vez antes de rodar esta etapa
+# (ver docs/adr.md ADR-013 e kubernetes/edge/cloudflared/*.yaml):
+#   1. Domínio ativo no Cloudflare.
+#   2. `cloudflared tunnel create lab-edge` — anota o tunnel ID.
+#   3. Preencher kubernetes/edge/cloudflared/configmap.yaml (tunnel ID +
+#      domínio real) e criar o CNAME wildcard *.pub.<dominio> apontando
+#      pro túnel.
+#   4. Secret cloudflared-credentials aplicado (via SealedSecret, nunca
+#      Secret puro comitado — ver secrets/README.md).
+step_cloudflared() {
+  log_info "=== Etapa 13: Instalando cloudflared (túnel público) ==="
+
+  if grep -q '<TUNNEL_ID>' "$PROJECT_ROOT/kubernetes/edge/cloudflared/configmap.yaml"; then
+    log_error "configmap.yaml ainda tem o placeholder <TUNNEL_ID>. Preencha antes de continuar."
+    log_error "Ver pré-requisitos em kubernetes/edge/cloudflared/configmap.yaml."
+    exit 1
+  fi
+
+  if ! kubectl get secret cloudflared-credentials -n edge &>/dev/null 2>&1; then
+    log_error "Secret cloudflared-credentials não encontrado no namespace edge."
+    log_error "Gere o SealedSecret a partir de secrets/env.cloudflared.enc.yaml antes de continuar."
+    exit 1
+  fi
+
+  kubectl apply -f "$PROJECT_ROOT/kubernetes/edge/cloudflared/configmap.yaml"
+  kubectl apply -f "$PROJECT_ROOT/kubernetes/edge/cloudflared/deployment.yaml"
+
+  wait_for_rollout "deployment/cloudflared" "edge" "120s"
+
+  log_ok "cloudflared instalado. Onboarding de novos projetos: kubernetes/edge/ingress-template.yaml"
+}
+
+# -----------------------------------------------------------------------------
 # Resumo final
 # -----------------------------------------------------------------------------
 print_summary() {
@@ -463,6 +520,13 @@ main() {
   # Aplicação de exemplo
   step_hello_lab
 
+  # Exposição pública (edge) — NÃO faz parte do bootstrap automático.
+  # Depende de domínio ativo no Cloudflare + tunnel ID + Secret
+  # cloudflared-credentials já aplicado (ver ADR-013 e
+  # kubernetes/edge/cloudflared/*.yaml). Rodar manualmente quando pronto:
+  #   ./k8s-bootstrap.sh step_ingress_nginx
+  #   ./k8s-bootstrap.sh step_cloudflared
+
   # Resumo
   print_summary
 }
@@ -470,6 +534,8 @@ main() {
 # Suporte a execução de etapa individual:
 # ./k8s-bootstrap.sh step_monitoring
 # ./k8s-bootstrap.sh step_gitea
+# ./k8s-bootstrap.sh step_ingress_nginx
+# ./k8s-bootstrap.sh step_cloudflared
 if [[ "${1:-}" =~ ^step_ ]]; then
   check_prerequisites
   "$1"

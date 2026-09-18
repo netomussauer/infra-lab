@@ -1,0 +1,106 @@
+# edge/cloudflared/networkpolicy.yaml
+# Raio de alcance do cloudflared e do ingress-nginx interno (namespace
+# edge). cloudflared só fala com o ingress-nginx-controller dentro do
+# cluster, DNS, e a borda do Cloudflare (obrigatório — é a outra ponta do
+# túnel outbound). ingress-nginx-controller só aceita tráfego do
+# cloudflared (mais Prometheus, pra métricas). Nenhum dos dois alcança
+# qualquer outro pod/namespace do lab. Ver docs/adr.md ADR-013.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cloudflared-netpol
+  namespace: edge
+  labels:
+    app.kubernetes.io/name: "cloudflared"
+    app.kubernetes.io/component: "network-policy"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "cloudflared"
+  policyTypes:
+    - Egress
+  egress:
+    # DNS (CoreDNS K3s)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "kube-system"
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # ingress-nginx interno — único destino dentro do cluster
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "ingress-nginx"
+              app.kubernetes.io/component: "controller"
+      ports:
+        - protocol: TCP
+          port: 80
+    # Borda do Cloudflare — obrigatório para o túnel outbound (QUIC/HTTP2)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: UDP
+          port: 7844
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-nginx-controller-netpol
+  namespace: edge
+  labels:
+    app.kubernetes.io/name: "ingress-nginx"
+    app.kubernetes.io/component: "network-policy"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "ingress-nginx"
+      app.kubernetes.io/component: "controller"
+  policyTypes:
+    - Ingress
+  ingress:
+    # Só o cloudflared (mesmo namespace) fala com o controller
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "cloudflared"
+      ports:
+        - protocol: TCP
+          port: 80
+    # Scraping do Prometheus (namespace monitoring)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "monitoring"
+      ports:
+        - protocol: TCP
+          port: 10254
+    # Admission webhook do ingress-nginx — o apiserver conecta direto no pod
+    # IP a partir do host do control-plane, sem identidade de
+    # pod/namespace, então só dá pra liberar por IP. Confirmado em
+    # 2026-09-18: sem esta regra, toda validação de Ingress falha com
+    # "502 Bad Gateway" na chamada do webhook (não tem relação com o nó
+    # onde o controller roda). Só valida sintaxe de Ingress — não expõe
+    # tráfego de aplicação.
+    - from:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 8443

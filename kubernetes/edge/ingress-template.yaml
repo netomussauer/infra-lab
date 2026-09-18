@@ -1,0 +1,77 @@
+# edge/ingress-template.yaml
+# TEMPLATE — não se aplica direto (não referencia nenhum app real). Copiar
+# para os manifests do projeto que precisar de endpoint público (amfit,
+# amactive, realtpmsys, training-performance-hub ou qualquer projeto
+# futuro) e preencher os placeholders. Ver docs/adr.md ADR-013.
+#
+# Procedimento de onboarding de um projeto novo:
+#   1. Copiar este arquivo para o repo/manifests do projeto, renomear
+#      <NOME_DO_APP>.
+#   2. Preencher NOME_DO_APP, NAMESPACE_DO_APP, SERVICE_DO_APP, PORTA e
+#      PATH_DE_INTEGRACAO — expor só a rota específica de integração
+#      (ex.: /webhooks/<provider>), nunca a aplicação inteira nem painéis
+#      administrativos.
+#   3. O hostname já cai no wildcard *.pub.SEU-DOMINIO.TLD coberto pelo
+#      túnel (configmap.yaml do cloudflared) — só criar registro DNS
+#      próprio se precisar de um hostname fora do padrão wildcard.
+#   4. Aplicar o Ingress + a NetworkPolicy (recomendado) no namespace do
+#      projeto. Nada precisa mudar em edge/cloudflared/ nem em
+#      edge/ingress-nginx/ para isso.
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: "NOME_DO_APP-public"
+  namespace: "NAMESPACE_DO_APP"
+  labels:
+    app.kubernetes.io/name: "NOME_DO_APP"
+    app.kubernetes.io/component: "public-ingress"
+    app.kubernetes.io/managed-by: "argocd"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+spec:
+  rules:
+    - host: "NOME_DO_APP.pub.SEU-DOMINIO.TLD"
+      http:
+        paths:
+          - path: "/PATH_DE_INTEGRACAO"
+            pathType: Prefix
+            backend:
+              service:
+                name: "SERVICE_DO_APP"
+                port:
+                  number: PORTA
+
+---
+# Opcional, recomendado: restringe quem alcança o app pela rota pública ao
+# ingress-nginx do namespace edge — o app continua inacessível a outros
+# pods do lab além do necessário.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: "NOME_DO_APP-public-netpol"
+  namespace: "NAMESPACE_DO_APP"
+  labels:
+    app.kubernetes.io/name: "NOME_DO_APP"
+    app.kubernetes.io/component: "network-policy"
+    app.kubernetes.io/managed-by: "argocd"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "NOME_DO_APP"
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: "edge"
+      ports:
+        - protocol: TCP
+          port: PORTA

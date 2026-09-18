@@ -1,0 +1,41 @@
+# edge/cloudflared/configmap.yaml
+# Regras de roteamento do túnel Cloudflare. Propositalmente burro: sempre
+# aponta pro ingress-nginx interno (namespace edge) — quem decide o
+# roteamento por hostname/path pra cada projeto é o recurso `Ingress` de
+# cada app (ver ../ingress-template.yaml), nunca este ConfigMap. Isso é o
+# que permite escalar pra novos projetos sem tocar aqui. Ver docs/adr.md
+# ADR-013.
+#
+# Túnel `lab-edge` (id cead65f3-e4e4-4bfd-84e4-6c853323c07c) e o CNAME
+# wildcard *.pub.amtech.app.br já foram criados via `cloudflared tunnel
+# create`/`route dns` em 2026-09-18. Falta só o Secret
+# `cloudflared-credentials` (ver deployment.yaml e secrets/README.md)
+# antes de aplicar este ConfigMap + o deployment.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudflared-config
+  namespace: edge
+  labels:
+    app.kubernetes.io/name: "cloudflared"
+    app.kubernetes.io/component: "tunnel-config"
+    app.kubernetes.io/managed-by: "kubectl"
+    environment: "lab"
+    lab_id: "lab-k8s-01"
+    lab_owner: "jose.mussauer"
+data:
+  config.yaml: |
+    tunnel: cead65f3-e4e4-4bfd-84e4-6c853323c07c
+    credentials-file: /etc/cloudflared/creds/credentials.json
+    metrics: 0.0.0.0:2000
+    no-autoupdate: true
+
+    ingress:
+      # Único destino dentro do cluster — todo hostname público cai aqui.
+      # Novo projeto = novo Ingress k8s no app dele, não uma linha nova aqui.
+      - hostname: "*.pub.amtech.app.br"
+        service: http://ingress-nginx-controller.edge.svc.cluster.local:80
+      # catch-all obrigatório (cloudflared exige que a última regra não
+      # tenha hostname) — qualquer coisa fora do padrão acima cai em 404
+      - service: http_status:404

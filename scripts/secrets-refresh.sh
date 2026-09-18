@@ -138,6 +138,23 @@ EOF
   echo "  ✓ $HOME/.kube/agent-ia.yaml"
 }
 
+# Credencial do túnel Cloudflare (exposição pública de amfit/amactive/
+# realtpmsys/training-performance-hub — ver docs/adr.md ADR-013). O
+# credentials.json materializado aqui é só o insumo local para gerar o
+# SealedSecret com scripts/seal-secret.sh — nunca é o que o cluster usa
+# diretamente.
+[ -f "$SECRETS_DIR/env.cloudflared.enc.yaml" ] && {
+  write_env_file "$SECRETS_DIR/env.cloudflared.enc.yaml" "$HOME/.env.cloudflared"
+  mkdir -p "$HOME/.cloudflared"
+  # shellcheck source=/dev/null
+  ( set -a; source "$HOME/.env.cloudflared"; set +a
+    umask 077
+    printf '%s\n' "$CLOUDFLARE_TUNNEL_CREDENTIALS_JSON" > "$HOME/.cloudflared/credentials.json"
+    chmod 600 "$HOME/.cloudflared/credentials.json"
+  )
+  echo "  ✓ $HOME/.cloudflared/credentials.json"
+}
+
 echo
 echo "== kubeconfig =="
 [ -f "$SECRETS_DIR/kubeconfig.enc.yaml" ] && write_kubeconfig "$SECRETS_DIR/kubeconfig.enc.yaml" "$HOME/.kube/infra-lab.yaml"
