@@ -48,7 +48,7 @@ grafana:
       cpu: "100m"
       memory: "256Mi"
     limits:
-      cpu: "500m"
+      cpu: "1000m"
       memory: "512Mi"
 
   service:
@@ -118,13 +118,17 @@ grafana:
       plugins: "/var/lib/grafana/plugins"
 
   # Probes
+  # initialDelaySeconds/failureThreshold ampliados em 2026-09-14: o startup
+  # (provisionamento de dashboards/plugins) vinha ultrapassando os 60s originais
+  # sob CPU-throttling (limits.cpu estava em 500m), causando crashloop —
+  # liveness matava o container antes dele terminar de subir.
   livenessProbe:
     httpGet:
       path: /api/health
       port: 3000
-    initialDelaySeconds: 60
-    periodSeconds: 15
-    failureThreshold: 3
+    initialDelaySeconds: 180
+    periodSeconds: 20
+    failureThreshold: 10
     successThreshold: 1
     timeoutSeconds: 5
 
@@ -132,9 +136,9 @@ grafana:
     httpGet:
       path: /api/health
       port: 3000
-    initialDelaySeconds: 30
+    initialDelaySeconds: 60
     periodSeconds: 10
-    failureThreshold: 3
+    failureThreshold: 15
     successThreshold: 1
     timeoutSeconds: 5
 
