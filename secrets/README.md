@@ -11,6 +11,7 @@ Credenciais do lab criptografadas via **SOPS + age**, versionadas no git.
 | `kubeconfig.enc.yaml` | `~/.kube/infra-lab.yaml` | Admin kubeconfig do cluster K3s |
 | `ssh-keys.enc.yaml` | `~/.ssh/{id_ed25519,lab_id_rsa}{,.pub}` | Chaves SSH usadas para acesso ao lab |
 | `app-passwords.enc.yaml` | `~/.env.lab-apps` | Senhas admin: Grafana, NetBox token, Gitea admin, etc |
+| `env.agent.enc.yaml` | `~/.env.agent` | Credenciais de **escopo reduzido** para sessões de agente de IA (Claude Code e afins) — ver seção "Credenciais de agente de IA" abaixo |
 
 ## Fluxo — host novo entra no lab
 
@@ -88,6 +89,39 @@ Em cada host que consome, `git pull && ./scripts/secrets-refresh.sh` pega a vers
 - **Backup da chave privada age**. Se você perder `~/.config/sops/age/keys.txt`
   e for o único recipient, **os secrets ficam permanentemente inacessíveis**.
   Guarde uma cópia offline (papel, dispositivo separado, cofre).
+
+## Credenciais de agente de IA
+
+`env.agent.enc.yaml` guarda um conjunto de credenciais **separado e de escopo
+reduzido**, criado em 2026-09-18 especificamente para sessões de agente de IA
+(Claude Code e afins) rodando neste WSL. A diferença para os outros arquivos
+não é só "mais uma credencial encriptada" — é que, uma vez decriptado, esse
+conjunto **não tem os mesmos privilégios** que as credenciais admin:
+
+| Credencial | Escopo | Onde foi criada |
+|---|---|---|
+| `PROXMOX_AGENT_TOKEN_ID`/`_SECRET` | usuário `agente-ia@pve`, role `PVEAuditor` (somente auditoria — sem `VM.Allocate`, `Sys.Modify`, `Sys.PowerMgmt`), token expira em 90 dias | Datacenter → Permissions → Users/API Tokens |
+| `NETBOX_AGENT_TOKEN` | usuário `agente-ia` (não-staff, não-superuser), permissão `view`-only em dcim/ipam/virtualization/tenancy/extras, token com `write_enabled: false` e expira em 90 dias | Admin → Users |
+| `AGENT_SSH_PRIVATE_KEY`/`AGENT_SSH_PUBLIC_KEY` | usuário Linux `agente-ia` (criado por `ansible/playbooks/01-base-setup.yml`, tag `agente-ia`) em todos os nós do cluster — sudo restrito a uma allowlist de comandos de diagnóstico (`systemctl status`, `journalctl`, `df`, `free`, `crictl ps/logs`, etc.), **sem** `NOPASSWD:ALL` como o `labadmin` | `/etc/sudoers.d/agente-ia` em cada nó |
+| `AGENT_KUBECONFIG` | `ServiceAccount agente-ia` (namespace `kube-system`) + `ClusterRole agente-ia-readonly` — leitura ampla, **sem** acesso a `Secrets`, sem nenhuma permissão de escrita | `kubernetes/bootstrap/agente-ia-rbac.yaml` |
+
+Uma sessão de agente deve carregar **só** `~/.env.agent` (via
+`./scripts/secrets-refresh.sh`, que já materializa `AGENT_SSH_PRIVATE_KEY` em
+`~/.ssh/agent-ia/agente_ia_ed25519` e `AGENT_KUBECONFIG` em
+`~/.kube/agent-ia.yaml`) — nunca `~/.env.proxmox`, `~/.kube/infra-lab.yaml`
+ou a chave `~/.ssh/lab_id_rsa` admin. Qualquer operação que exija privilégio
+maior (escrita em VM, deploy no cluster, restart de serviço) deve ser feita
+pelo humano com as credenciais admin, não contornada dando mais escopo ao
+agente.
+
+**Rotação/revogação**: como os tokens Proxmox/NetBox já expiram sozinhos em
+90 dias, a rotação de rotina é automática (é só gerar novos antes do prazo).
+Para revogar imediatamente: apagar o token em Proxmox/NetBox, deletar o
+Secret `agente-ia-token`/`ServiceAccount agente-ia` do cluster
+(`kubectl delete -f kubernetes/bootstrap/agente-ia-rbac.yaml`), remover o
+usuário `agente-ia` dos nós (Ansible) — e por fim rotacionar/reencriptar
+`env.agent.enc.yaml` com os valores novos, igual ao fluxo de qualquer outro
+secret deste diretório.
 
 ## Ver também
 

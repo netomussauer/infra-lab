@@ -113,6 +113,31 @@ EOF
 [ -f "$SECRETS_DIR/env.omniroute.enc.yaml" ] && write_env_file "$SECRETS_DIR/env.omniroute.enc.yaml" "$HOME/.env.omniroute"
 [ -f "$SECRETS_DIR/app-passwords.enc.yaml" ] && write_env_file "$SECRETS_DIR/app-passwords.enc.yaml" "$HOME/.env.lab-apps"
 
+# Credenciais de escopo reduzido para sessões de agente de IA (ver secrets/README.md
+# seção "Credenciais de agente de IA"). AGENT_SSH_PRIVATE_KEY e AGENT_KUBECONFIG
+# vêm como variáveis multi-linha dentro de ~/.env.agent; materializamos elas
+# também como arquivos de verdade, igual ao padrão usado para o admin.
+[ -f "$SECRETS_DIR/env.agent.enc.yaml" ] && {
+  write_env_file "$SECRETS_DIR/env.agent.enc.yaml" "$HOME/.env.agent"
+  mkdir -p "$HOME/.ssh/agent-ia"
+  chmod 700 "$HOME/.ssh/agent-ia"
+  # shellcheck source=/dev/null
+  ( set -a; source "$HOME/.env.agent"; set +a
+    umask 077
+    # printf '%s\n' garante newline final — OpenSSH recusa a chave privada
+    # sem isso ("error in libcrypto" ao carregar).
+    printf '%s\n' "$AGENT_SSH_PRIVATE_KEY" > "$HOME/.ssh/agent-ia/agente_ia_ed25519"
+    printf '%s\n' "$AGENT_SSH_PUBLIC_KEY" > "$HOME/.ssh/agent-ia/agente_ia_ed25519.pub"
+    chmod 600 "$HOME/.ssh/agent-ia/agente_ia_ed25519"
+    chmod 644 "$HOME/.ssh/agent-ia/agente_ia_ed25519.pub"
+    mkdir -p "$HOME/.kube"
+    printf '%s\n' "$AGENT_KUBECONFIG" > "$HOME/.kube/agent-ia.yaml"
+    chmod 600 "$HOME/.kube/agent-ia.yaml"
+  )
+  echo "  ✓ $HOME/.ssh/agent-ia/agente_ia_ed25519 (+ .pub)"
+  echo "  ✓ $HOME/.kube/agent-ia.yaml"
+}
+
 echo
 echo "== kubeconfig =="
 [ -f "$SECRETS_DIR/kubeconfig.enc.yaml" ] && write_kubeconfig "$SECRETS_DIR/kubeconfig.enc.yaml" "$HOME/.kube/infra-lab.yaml"
@@ -126,3 +151,8 @@ echo "OK — secrets restaurados. Para carregar env vars no shell atual:"
 echo "  source ~/.env.proxmox"
 echo "  source ~/.env.omniroute"
 echo "  export KUBECONFIG=~/.kube/infra-lab.yaml"
+echo
+echo "Para sessões de AGENTE DE IA, use as credenciais de escopo reduzido (nunca as acima):"
+echo "  source ~/.env.agent"
+echo "  export KUBECONFIG=~/.kube/agent-ia.yaml"
+echo "  ssh -i ~/.ssh/agent-ia/agente_ia_ed25519 agente-ia@<host>"

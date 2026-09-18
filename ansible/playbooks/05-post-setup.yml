@@ -38,6 +38,10 @@
       ci-runner:
         - "workload=runner"
         - "node-role=worker"
+      k3s-worker-pve2:
+        - "workload=general"
+        - "node-role=worker"
+        - "hypervisor=pve2"
       notebook-i5:
         - "workload=monitoring"
         - "node-role=worker"

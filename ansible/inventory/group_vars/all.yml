@@ -12,6 +12,11 @@ ansible_user:                labadmin
 ansible_ssh_private_key_file: ~/.ssh/lab_id_rsa
 ansible_ssh_common_args:     "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
+# Chave pública (não é segredo) do usuário agente-ia — conta de escopo
+# reduzido para sessões de agente de IA. A privada fica só em
+# secrets/env.agent.enc.yaml (ver secrets/README.md), nunca neste arquivo.
+agente_ia_ssh_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICMcu4C5BzMN7n20v06+H0/aumomvirdtFHTUwMa2rfz agente-ia@lab"
+
 # ---------------------------------------------------------------------------
 # Rastreabilidade do laboratório (equivalente às tags do Terraform)
 # ---------------------------------------------------------------------------

@@ -179,6 +179,68 @@
       tags: [users]
 
     # -------------------------------------------------------------------------
+    # Usuário agente-ia — conta de escopo reduzido para sessões de agente de IA
+    # (Claude Code e afins), separada de labadmin. Ver docs/architecture.md
+    # seção "Acesso de agentes de IA" e secrets/README.md (env.agent.enc.yaml).
+    # Sudo restrito a comandos de diagnóstico read-only — qualquer operação de
+    # escrita/mudança de estado exige o humano rodar via labadmin.
+    # -------------------------------------------------------------------------
+
+    - name: Criar grupo agente-ia
+      ansible.builtin.group:
+        name: agente-ia
+        state: present
+      tags: [users, agente-ia]
+
+    - name: Criar usuário agente-ia
+      ansible.builtin.user:
+        name: agente-ia
+        group: agente-ia
+        shell: /bin/bash
+        create_home: true
+        state: present
+        comment: "Conta de escopo reduzido para sessões de agente de IA (somente diagnóstico)"
+      tags: [users, agente-ia]
+
+    - name: Criar diretório .ssh do agente-ia
+      ansible.builtin.file:
+        path: /home/agente-ia/.ssh
+        state: directory
+        owner: agente-ia
+        group: agente-ia
+        mode: "0700"
+      tags: [users, agente-ia]
+
+    - name: Instalar chave pública SSH do agente-ia
+      ansible.builtin.copy:
+        dest: /home/agente-ia/.ssh/authorized_keys
+        content: "{{ agente_ia_ssh_public_key }}\n"
+        owner: agente-ia
+        group: agente-ia
+        mode: "0600"
+      tags: [users, agente-ia]
+
+    - name: Restringir sudo do agente-ia a comandos de diagnóstico (sem escrita)
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/agente-ia
+        # Somente leitura/status: sem systemctl restart|stop|start, sem apt,
+        # sem edição de arquivos, sem k3s kubectl (acesso ao cluster é via
+        # ServiceAccount/RBAC do K8s, não via SSH+root).
+        content: |
+          Cmnd_Alias AGENTE_IA_CMDS = /usr/bin/systemctl status *, \
+            /usr/bin/journalctl *, /bin/journalctl *, \
+            /usr/bin/df *, /usr/bin/free *, /usr/bin/uptime, \
+            /usr/sbin/crictl ps *, /usr/sbin/crictl logs *, \
+            /usr/sbin/crictl inspect *, \
+            /usr/bin/ss *, /usr/bin/ip *, /usr/bin/cat /var/log/*
+          agente-ia ALL=(ALL) NOPASSWD: AGENTE_IA_CMDS
+        owner: root
+        group: root
+        mode: "0440"
+        validate: "visudo -cf %s"
+      tags: [users, agente-ia]
+
+    # -------------------------------------------------------------------------
     # Hardening SSH
     # -------------------------------------------------------------------------
 

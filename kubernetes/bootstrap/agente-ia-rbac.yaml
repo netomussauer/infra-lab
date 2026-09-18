@@ -1,0 +1,108 @@
+# bootstrap/agente-ia-rbac.yaml
+#
+# ServiceAccount + RBAC de escopo reduzido para sessões de agente de IA
+# (Claude Code e afins) no cluster lab-k8s-01. Leitura ampla do cluster,
+# SEM acesso a Secrets (evita reler credenciais de outros sistemas guardadas
+# como Secret) e SEM permissão de escrita em nenhum recurso.
+#
+# Qualquer operação de escrita (apply, delete, scale, exec) exige o
+# kubeconfig admin (~/.kube/infra-lab.yaml), usado pelo humano.
+#
+# Aplicar: kubectl apply -f kubernetes/bootstrap/agente-ia-rbac.yaml
+# Ver também: secrets/README.md (env.agent.enc.yaml), docs/architecture.md
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agente-ia
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: agente-ia
+    app.kubernetes.io/component: automation-identity
+    environment: lab
+    lab_id: lab-k8s-01
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agente-ia-readonly
+  labels:
+    app.kubernetes.io/name: agente-ia
+rules:
+  # Leitura ampla — get/list/watch em quase todos os recursos padrão.
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - services
+      - endpoints
+      - configmaps
+      - namespaces
+      - nodes
+      - events
+      - persistentvolumeclaims
+      - persistentvolumes
+      - replicationcontrollers
+      - serviceaccounts
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - replicasets
+      - statefulsets
+      - daemonsets
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+      - networkpolicies
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources:
+      - pods
+      - nodes
+    verbs: ["get", "list"]
+  - apiGroups: ["policy"]
+    resources:
+      - poddisruptionbudgets
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources:
+      - storageclasses
+    verbs: ["get", "list", "watch"]
+  # NÃO inclui "secrets" — de propósito. Ler Secret exporia credenciais de
+  # outros sistemas (ex. harbor-creds, postgresql secret) mesmo sem intenção.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agente-ia-readonly
+  labels:
+    app.kubernetes.io/name: agente-ia
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agente-ia-readonly
+subjects:
+  - kind: ServiceAccount
+    name: agente-ia
+    namespace: kube-system
+---
+# Token de longa duração vinculado à SA — segue o mesmo padrão de credencial
+# estática já usado no resto do lab (kubeconfig.enc.yaml admin, etc.),
+# revogável deletando este Secret ou a própria SA.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: agente-ia-token
+  namespace: kube-system
+  annotations:
+    kubernetes.io/service-account.name: agente-ia
+  labels:
+    app.kubernetes.io/name: agente-ia
+type: kubernetes.io/service-account-token
