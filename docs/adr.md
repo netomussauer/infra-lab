@@ -418,4 +418,49 @@ kubectl create secret generic my-app-secrets \
 - **Cert público pode ser comitado:** é criptografia assimétrica — o `pub-cert.pem` é seguro em repo público.
 - **`kubeseal` CLI precisa ser instalado** pelo dev (ou pelo CI) — não está no cluster. Instalação documentada no runbook.
 - O escopo `strict` torna refactors de namespace/nome mais custosos (precisa re-encriptar). Aceitável — segurança > conveniência.
+
+---
+
+## ADR-012
+
+**Título:** Credenciais de escopo reduzido para agentes de IA (vs. reuso das credenciais admin, vs. HashiCorp Vault)
+
+**Status:** Aceito
+
+**Contexto:**
+
+Sessões de agente de IA (Claude Code e afins) rodando no WSL do host de dev passaram a executar operações reais no lab — SSH em nós, chamadas à API do Proxmox, `kubectl` no cluster, API do NetBox. Até 2026-09-18, essas sessões usavam exatamente as mesmas credenciais admin de um humano (`root@pam!root` no Proxmox, usuário `labadmin` com `sudo NOPASSWD:ALL` via SSH, kubeconfig admin completo, token NetBox de escrita). Não havia diferenciação entre "o dono do lab operando" e "um agente executando uma tarefa" — nem em privilégio, nem em auditoria. O único controle existente era um classificador heurístico do lado do Claude Code (auto mode), que bloqueia ações que *parecem* arriscadas — não é controle de acesso real, é best-effort e gera falsos positivos.
+
+**Alternativas consideradas:**
+
+| Critério | Escopo nativo por sistema (Proxmox ACL, sudoers, K8s RBAC, NetBox permissions) | HashiCorp Vault (secrets dinâmicos + audit device) |
+| --- | --- | --- |
+| Infra nova necessária | Nenhuma — usa mecanismos que cada sistema já tem | Um serviço 24/7 a mais (unseal, storage backend, políticas) |
+| Custo operacional em hardware Sandy Bridge/Ivy Bridge (2011-2012) | Zero | Real — mais um processo competindo por CPU/RAM já escassos |
+| Secrets engine pronta para Proxmox/NetBox | N/A (usa token/permissão nativa de cada um) | Não existe — precisaria de plugin customizado |
+| Auditoria | Logs nativos de cada sistema (Proxmox tasks/`pveproxy` access log, SSH `auth.log`, K8s audit log, NetBox changelog) — suficiente uma vez que o agente tem identidade própria em cada um | Audit device nativo, mas redundante com os logs acima |
+| Consistência com decisão já tomada (ADR-011) | Mesma lógica de frugalidade | Contradiria a justificativa já usada para rejeitar Vault no ADR-011, para um problema de escopo *menor* (1 operador + 1 agente local, não multi-time) |
+
+**Decisão:** Criar uma identidade de escopo reduzido — usuário/token/ServiceAccount próprios, chamados `agente-ia` — em cada sistema que o agente precisa tocar, em vez de reusar credenciais admin ou introduzir Vault:
+
+- **Proxmox:** usuário `agente-ia@pve`, role `PVEAuditor` (só auditoria — sem `VM.Allocate`, `Sys.Modify`, `Sys.PowerMgmt`), token com expiração de 90 dias.
+- **SSH:** usuário Linux `agente-ia` em todos os nós (criado por `ansible/playbooks/01-base-setup.yml`), chave própria, `sudoers` restrito a uma allowlist de comandos de diagnóstico (`systemctl status`, `journalctl`, `df`, `free`, `crictl ps/logs`, etc.) — sem `NOPASSWD:ALL`.
+- **Kubernetes:** `ServiceAccount agente-ia` (namespace `kube-system`) + `ClusterRole agente-ia-readonly` — leitura ampla, **sem** acesso a `Secrets`, sem nenhuma permissão de escrita (`kubernetes/bootstrap/agente-ia-rbac.yaml`).
+- **NetBox:** usuário `agente-ia` (não-staff, não-superuser), permissão `view`-only, token com `write_enabled: false` e expiração de 90 dias.
+
+Distribuídas via o mesmo fluxo SOPS+age já existente (`secrets/env.agent.enc.yaml`, ver ADR-011 e `secrets/README.md`), não um mecanismo novo.
+
+**Justificativa:**
+
+- Cada sistema envolvido já tinha controle de acesso granular nativo (ACL+token expiry no Proxmox, RBAC+ServiceAccount no K8s, permissions+expires no NetBox, usuário/sudoers no SSH) — o gap real não era "falta uma ferramenta de secrets", era "ninguém tinha configurado uma identidade separada pro agente".
+- Resolve o problema de fundo: uma vez decriptado, um secret vira plaintext acessível a qualquer processo do mesmo usuário do host. Vault não elimina isso — só adiciona uma camada de indireção em cima. O que fecha o gap é o agente ter, estruturalmente, um conjunto de credenciais **diferente** (não só "mais bem guardado") do humano.
+- Consistente com a "Frugalidade de recursos" já documentada como princípio do lab e com a rejeição de Vault no ADR-011 para um problema irmão.
+- Reversível e revogável por sistema, sem depender de nenhum componente novo: apagar o token/usuário/ServiceAccount em cada sistema é suficiente.
+
+**Consequências:**
+
+- Qualquer operação que exija privilégio maior (escrita em VM, deploy, restart de serviço, migração) precisa cair para as credenciais admin deliberadamente — isso é esperado, não um bug a contornar. Ver `AGENTS.md` seção "AI Agent Credentials".
+- Tokens Proxmox/NetBox expiram em 90 dias — rotação é automática/forçada por design; precisa gerar novos antes do prazo (ou perde acesso, fail-safe).
+- `notebook-i5` (`ubuntu-neto`) ainda não recebeu o usuário `agente-ia` — a chave `labadmin` estava falhando lá no momento da implementação (problema pré-existente, não causado por isso). Pendente de correção separada.
+- Vault permanece como opção de fase futura, condicional: só revisitar se o lab virar multi-agente/multi-operador ou precisar de secrets dinâmicos em escala — nesse caso rodaria como LXC dedicado em `virt` (mais headroom), fora do K3s, com unseal manual (sem KMS de nuvem disponível).
 - O controller em `kube-system` segue a convenção oficial do projeto. Migrar para namespace dedicado (`sealed-secrets`) é possível mas exige `--controller-namespace` em todo `kubeseal` — fricção alta para todos os projetos.

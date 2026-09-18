@@ -6,14 +6,16 @@ Laboratório completo de infraestrutura home-lab com cluster Kubernetes K3s mult
 
 | IP | Host / Serviço | OS / Plataforma | Papel |
 | --- | --- | --- | --- |
-| `192.168.1.20` | `virt` (notebook-i7) | Proxmox VE 9.2.3 | Hypervisor — VMs K3s — nó principal do cluster `proxmox-lab` |
-| `192.168.1.21` | `pve2` | Proxmox VE 9.2.3 | Hypervisor — GPU NVIDIA GTX 1060 6 GB para testes de IA (PCI passthrough) |
-| `192.168.1.30` | k3s-server *(VM)* | Ubuntu 22.04 | K3s control-plane |
-| `192.168.1.31` | k3s-worker-cicd *(VM)* | Ubuntu 22.04 | K3s worker — CI/CD |
-| `192.168.1.32` | ci-runner *(VM)* | Ubuntu 22.04 | Tekton runner |
+| `192.168.1.20` | `virt` (notebook-i7, i7-2670QM/16GB) | Proxmox VE 9.2.3 | Hypervisor — VMs K3s (control-plane + 2 workers) — nó principal do cluster `proxmox-lab` |
+| `192.168.1.21` | `pve2` (i5-3330/7.7GB) | Proxmox VE 9.2.3 | Hypervisor — GPU NVIDIA GTX 1060 6 GB (PCI passthrough) — 1 VM K3s (`k3s-worker-pve2`) + CTs `netbox`/`bookstack`/`immich`/`omniroute` |
+| `192.168.1.30` | k3s-server *(VM @ virt)* | Ubuntu 22.04 | K3s control-plane |
+| `192.168.1.31` | k3s-worker-cicd *(VM @ virt)* | Ubuntu 22.04 | K3s worker — CI/CD |
+| `192.168.1.32` | ci-runner *(VM @ virt)* | Ubuntu 22.04 | Tekton runner |
+| `192.168.1.33` | k3s-worker-pve2 *(VM @ pve2)* | Ubuntu 22.04 | K3s worker — `workload=general` (alívio de carga, sem afinidade fixa) — adicionado 2026-09-18 |
 | `192.168.1.65` | notebook-i5 — hostname: `ubuntu-neto` | Ubuntu 24.04 | K3s worker — monitoring |
-| `192.168.1.72` | netbox-vm *(VM)* | — | NetBox IPAM |
-| `192.168.1.84` | `ollama` — CT 101 LXC no `pve2` | Ubuntu (Proxmox community-script) | Ollama 0.30.10 — API `:11434` com GPU NVIDIA GTX 1060 (PCI passthrough) |
+| `192.168.1.72` | `netbox` — CT 100 LXC no `pve2` *(migrado de `virt` em 2026-09-18)* | Debian (Proxmox community-script) | NetBox IPAM |
+| `192.168.1.76` | `bookstack` — CT 106 LXC no `pve2` *(migrado de `virt` em 2026-09-18)* | Debian (Proxmox community-script) | Wiki interna do lab |
+| `192.168.1.84` | `ollama` — CT 101 LXC no `pve2` | Ubuntu (Proxmox community-script) | Ollama 0.30.10 — API `:11434` com GPU NVIDIA GTX 1060 (PCI passthrough). **Parado (não `onboot`) desde 2026-09-18** — 0% de uso de GPU/CPU confirmado em 30 dias de métricas; ver `context/facts/ollama-lab.md` |
 | `192.168.1.85` | `immich` — CT 103 LXC no `pve2` | Debian 13 (Proxmox community-script, systemd nativo) | Immich 3.0.3 — Web `:2283`; rootfs `local-lvm` (15GB), library NFS SeagateNAS (`/mnt/immich-library`, 200GB); GPU compartilhada com ollama |
 | `192.168.1.117` | `omniroute` (CT 107 LXC no `pve2`) | Debian 13 | OmniRoute v3.8.49 — AI Gateway multi-provider LLM (~144 modelos) · Web UI `http://192.168.1.117:20128` · OpenAI-compat `/v1` · Integrado com Continue.dev + Open-WebUI (DHCP — IP pode variar) |
 | `192.168.1.110` | raspberry-pi — hostname: `raspneto` | Raspbian 12 | K3s worker — edge (ARMv7) |
@@ -45,7 +47,7 @@ Laboratório completo de infraestrutura home-lab com cluster Kubernetes K3s mult
 | Documento | Conteúdo |
 | --- | --- |
 | [docs/architecture.md](docs/architecture.md) | Topologia, inventário de hardware, diagrama do cluster, componentes por namespace |
-| [docs/adr.md](docs/adr.md) | 9 Architecture Decision Records — por que cada tecnologia foi escolhida |
+| [docs/adr.md](docs/adr.md) | 12 Architecture Decision Records — por que cada tecnologia foi escolhida |
 | [docs/runbook.md](docs/runbook.md) | Procedimentos de instalação, operações day-2 e P1–P19 de troubleshooting |
 
 ## Estrutura do repositório
@@ -89,6 +91,7 @@ infra-lab/
 ├── kubernetes/
 │   ├── bootstrap/
 │   │   ├── namespaces.yaml         # Namespaces: cicd, registry, monitoring
+│   │   ├── agente-ia-rbac.yaml     # ServiceAccount + RBAC read-only p/ sessões de agente de IA
 │   │   ├── metallb/
 │   │   │   ├── metallb-install.yaml
 │   │   │   └── ipaddresspool.yaml  # Pool 192.168.1.200-220
@@ -229,29 +232,38 @@ export KUBECONFIG=~/.kube/infra-lab.yaml
 
 ### 6. Acessos após o bootstrap
 
-| Serviço | Endereço | Credenciais padrão |
-| --- | --- | --- |
-| Pi-hole | `http://192.168.1.53/admin` (ou `http://pihole.lab.local/admin`) | senha em secret `pihole-admin` |
-| Gitea | `http://192.168.1.201:3000` (ou `http://gitea.lab.local:3000`) | admin / (definido na instalação) |
-| Harbor | `http://192.168.1.202` (ou `http://harbor.lab.local`) | admin / Harbor12345! |
-| ArgoCD | `http://192.168.1.203` (ou `http://argocd.lab.local`) | admin / secret `argocd-initial-admin-secret` |
-| Tekton Dashboard | `http://192.168.1.204` (ou `http://tekton.lab.local`) | — |
-| Open WebUI | `http://192.168.1.209` (ou `http://chat.lab.local`) | 1º cadastro vira admin (signup local) |
-| Grafana | `http://192.168.1.210` (ou `http://grafana.lab.local`) | admin / lab@admin |
-| NetBox | `https://192.168.1.72` | admin / (definido na instalação) |
+| Serviço | Endereço |
+| --- | --- |
+| Pi-hole | `http://192.168.1.53/admin` (ou `http://pihole.lab.local/admin`) |
+| Gitea | `http://192.168.1.201:3000` (ou `http://gitea.lab.local:3000`) |
+| Harbor | `http://192.168.1.202` (ou `http://harbor.lab.local`) |
+| ArgoCD | `http://192.168.1.203` (ou `http://argocd.lab.local`) |
+| Tekton Dashboard | `http://192.168.1.204` (ou `http://tekton.lab.local`) |
+| Open WebUI | `http://192.168.1.209` (ou `http://chat.lab.local`) |
+| Grafana | `http://192.168.1.210` (ou `http://grafana.lab.local`) |
+| NetBox | `https://192.168.1.72` |
 
-> Credenciais completas e procedimentos de rotação em [docs/runbook.md — Seção 6](docs/runbook.md#6-acessos-e-credenciais).
+> Credenciais, senhas e procedimentos de rotação **não ficam versionados no
+> git** — consulte `docs/CREDENTIALS.local.md` (arquivo local, gitignored;
+> ver `secrets/README.md` para como reconstruí-lo se necessário).
 
-## Nós do cluster (estado atual)
+## Nós do cluster (estado atual — 2026-09-18, 6 nós)
 
 ```text
 NAME              STATUS   ROLES           VERSION        INTERNAL-IP     OS
 k3s-server        Ready    control-plane   v1.29.3+k3s1   192.168.1.30    Ubuntu 22.04
 k3s-worker-cicd   Ready    <none>          v1.29.3+k3s1   192.168.1.31    Ubuntu 22.04
 ci-runner         Ready    <none>          v1.29.3+k3s1   192.168.1.32    Ubuntu 22.04
+k3s-worker-pve2   Ready    <none>          v1.29.3+k3s1   192.168.1.33    Ubuntu 22.04
 ubuntu-neto       Ready    <none>          v1.29.3+k3s1   192.168.1.65    Ubuntu 24.04
 raspneto          Ready    <none>          v1.29.3+k3s1   192.168.1.110   Raspbian 12
 ```
+
+`k3s-worker-pve2` roda em `pve2` (segundo host Proxmox), label
+`workload=general` — adicionado para aliviar `k3s-worker-cicd`. Provisionado
+manualmente via API do Proxmox (`qm clone` + `qm migrate`) + Ansible, com o
+código Terraform equivalente já escrito mas ainda não importado no state —
+ver `docs/runbook.md` P24.
 
 ## Inventário dinâmico Ansible via NetBox
 

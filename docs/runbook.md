@@ -637,51 +637,23 @@ kubectl delete pipelinerun -n cicd \
 
 ## 6. Acessos e credenciais
 
-> **Segurança:** as senhas abaixo são os valores padrão de instalação. Devem ser trocadas após o primeiro acesso em qualquer ambiente além de home lab completamente isolado.
+Movido para `docs/CREDENTIALS.local.md` em 2026-09-18 — arquivo local,
+**gitignored** (`*.local.md`), nunca commitado. Serviços cobertos: Pi-hole,
+Gitea, Harbor, ArgoCD, Grafana, Proxmox, NetBox, os bancos PostgreSQL/Redis
+compartilhados do namespace `shared-infra`, e os comandos para buscar
+secrets rotativos (senha inicial do ArgoCD, HMAC do webhook Tekton).
 
-| Serviço | URL | Usuário | Senha padrão |
-|---|---|---|---|
-| Pi-hole | `http://192.168.1.53/admin` | `admin` | `pihole@lab123` (secret `pihole-admin`) |
-| Gitea | `http://192.168.1.201:3000` | `labadmin` | `labadmin123!` |
-| Harbor | `http://192.168.1.202` | `admin` | `Harbor12345!` |
-| ArgoCD | `http://192.168.1.203` | `admin` | ver secret abaixo |
-| Grafana | `http://192.168.1.210` | `admin` | `lab@admin` |
-| Proxmox | `https://192.168.1.20:8006` | `root` | definido na instalação |
-| NetBox | `https://192.168.1.72` | `admin` | definido na instalação |
+Motivo: essas tabelas continham senhas reais em texto puro versionadas no
+git (não só valores de exemplo), inclusive das bases de dados em uso pelas
+apps `amfit`/`realtpmsys` — violava a própria política de credenciais deste
+workspace (`AGENTS.md` → "Credentials and Secrets"). Ver `secrets/README.md`
+para o caminho de migração para SOPS+age (`app-passwords.enc.yaml`).
 
-### Bancos de dados compartilhados (namespace `shared-infra`)
-
-| Banco | Host interno | Porta | Database | Usuário | Senha padrão |
-| --- | --- | --- | --- | --- | --- |
-| PostgreSQL 16 | `postgresql.shared-infra.svc.cluster.local` | `5432` | `realtpmsys` | `realtpmsys` | `realtpmsys123!` |
-| PostgreSQL 16 | `postgresql.shared-infra.svc.cluster.local` | `5432` | `amfit` | `amfit` | `amfit123!` |
-| PostgreSQL 16 | `postgresql.shared-infra.svc.cluster.local` | `5432` | `postgres` | `postgres` | `postgres123!` |
-| Redis 7 | `redis.shared-infra.svc.cluster.local` | `6379` | — | — | `redis123!` |
-
-```bash
-# Acessar PostgreSQL via kubectl exec:
-kubectl exec -n shared-infra postgresql-0 -- psql -U postgres
-
-# String de conexão para aplicações Go (exemplo):
-# postgres://realtpmsys:realtpmsys123!@postgresql.shared-infra.svc.cluster.local:5432/realtpmsys?sslmode=disable
-# postgres://amfit:amfit123!@postgresql.shared-infra.svc.cluster.local:5432/amfit?sslmode=disable
-
-# Acessar Redis via kubectl exec:
-kubectl exec -n shared-infra redis-0 -- redis-cli -a redis123! ping
-
-# String de conexão Redis (exemplo):
-# redis://:redis123!@redis.shared-infra.svc.cluster.local:6379/0
-```
-
-```bash
-# Senha inicial do ArgoCD:
-kubectl -n cicd get secret argocd-initial-admin-secret \
-  -o jsonpath='{.data.password}' | base64 -d && echo
-
-# Secret HMAC do webhook Tekton:
-kubectl -n cicd get secret gitea-webhook-secret \
-  -o jsonpath='{.data.secretToken}' | base64 -d && echo
-```
+Se `docs/CREDENTIALS.local.md` não existir na sua cópia local, veja a nota
+"Se este arquivo for perdido" dentro dele mesmo (fontes: `helm-values.yaml`
+de cada serviço, `kubernetes/shared-infra/*/secret.yaml`) — ou peça pra
+quem tem acesso reencriptar/compartilhar via o fluxo já documentado em
+`secrets/README.md`.
 
 ---
 
@@ -1218,3 +1190,32 @@ sudo crictl pull --creds "admin:Harbor12345!" harbor.lab.local/<projeto>/<app>:l
 ```
 
 **Quando o CA do Harbor for rotacionado:** re-executar o playbook 07. Ele extrai a versão atual do CA do secret `harbor-nginx` e atualiza o trust store dos nós.
+
+### P24: Terraform — providers quebrados impedem `plan`/`apply`/`import` (pendente de correção)
+
+**Sintoma:** qualquer comando Terraform em `terraform/proxmox/` falha, mesmo operações que não deveriam tocar no NetBox (ex. `terraform import` de um recurso `proxmox_virtual_environment_vm`).
+
+**Causa 1 — provider NetBox:** `e-breuninger/netbox` v5.3.0 falha na etapa de `configure` contra o NetBox 4.4.1 do lab:
+
+```text
+Error: 0xc... (*interface {}) is not supported by the TextConsumer, can be
+resolved by supporting TextUnmarshaler interface
+  with provider["registry.terraform.io/e-breuninger/netbox"]
+```
+
+Como o provider é declarado no mesmo `main.tf`, esse erro bloqueia **qualquer** comando Terraform no repo, mesmo os que não usam nenhum recurso `netbox_*`. A API do NetBox em si está saudável (confirmado via `curl` direto) — o bug é na comunicação interna do provider.
+
+**Causa 2 — provider Proxmox:** `bpg/proxmox` v0.104.0 falha especificamente em `terraform import` de VM (`proxmox_virtual_environment_vm`) contra Proxmox VE 9.2.3:
+
+```text
+Error: failed to get resources list of type ("vm") for cluster: received an
+HTTP 401 response - Reason: Authentication failed!
+```
+
+Confirmado que **não é problema de credencial** — o mesmo token (`root@pam!root`) funciona perfeitamente via `curl` direto nesse exato endpoint (`/cluster/resources?type=vm`), inclusive com permissões completas (`root@pam` é superuser). Testado com 5 tentativas e retry entre elas — falha de forma consistente, não é intermitência de rede.
+
+**Impacto prático:** o `terraform.tfstate` deste repo está vazio/ausente (nunca houve um `apply`/`import` bem-sucedido nesta máquina) — as VMs do cluster K3s (`k3s-server`, `k3s-worker-cicd`, `ci-runner`, `k3s-worker-pve2`) existem e funcionam normalmente no Proxmox, mas o Terraform não tem registro delas. Um `terraform apply` às cegas tentaria recriar essas VMs do zero (provavelmente falhando por conflito de `vm_id`, não destruindo nada — mas travando feio).
+
+**Solução (não aplicada ainda):** atualizar os dois providers para a versão mais recente disponível (`bpg/proxmox` e `e-breuninger/netbox`) e revalidar `terraform init`/`plan`/`import` antes de qualquer `apply` real. Só depois disso reconciliar o state com `terraform import` nas 4 VMs + todos os recursos de `netbox.tf` (ip_addresses, virtual_machines, prefixes, tags, site, tenant, cluster — nenhum está no state hoje).
+
+**Workaround usado em 2026-09-18** para criar a VM `k3s-worker-pve2` sem depender do Terraform: clone manual via API do Proxmox (`qm clone` + `qm migrate` entre nós, já que clone direto cross-node falha com storage local não-compartilhado) + Ansible normal (`01-base-setup.yml` → `04-k3s-agents.yml` → `05-post-setup.yml`). O código Terraform equivalente já está escrito em `main.tf`/`netbox.tf`/`variables.tf`, só não foi importado.

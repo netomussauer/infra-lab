@@ -5,6 +5,16 @@ tags: [ai, ollama, gpu]
 priority: high
 ---
 
+**Status desde 2026-09-18: PARADO** (`onboot=0`, CT desligado via Proxmox).
+Métricas de Prometheus (`nvidia_smi_utilization_gpu_ratio`) e RRD do Proxmox
+mostraram 0% de uso de GPU e CPU nos 30 dias anteriores — nenhum request real
+chegando à API, apesar de configurado como provider `ollama-local/*` no
+OmniRoute. Container mantido (não deletado) para reversão fácil caso algo
+dependa dele silenciosamente; reavaliar remoção definitiva depois de um
+período de observação. Liberar essa GPU também desbloqueia o plano já
+documentado de ativar CUDA no `immich-ml` (hoje rodando em CPU só por causa
+do trade-off de VRAM com o Ollama).
+
 Ollama v0.30.10 rodando como LXC CT 101 no `pve2`. Hostname `ollama`.
 
 - IP: 192.168.1.84 (DHCP via vmbr0). DNS: ollama.lab.local.

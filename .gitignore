@@ -115,6 +115,13 @@ dist/
 .env.*.local
 
 # ---------------------------------------------------------------------------
+# Documentação local — nunca commitar (credenciais/senhas em texto puro
+# extraídas de docs versionadas; ver docs/CREDENTIALS.local.md)
+# ---------------------------------------------------------------------------
+*.local.md
+CREDENTIALS.local.md
+
+# ---------------------------------------------------------------------------
 # IDEs e editores
 # ---------------------------------------------------------------------------
 .vscode/settings.json

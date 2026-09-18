@@ -69,7 +69,23 @@ Além do cluster K3s, um segundo hipervisor Proxmox (`pve2`) com GPU NVIDIA em P
 | `k3s-server` | 192.168.1.30 | 2 | 4 GB | K3s control-plane + etcd embedded |
 | `k3s-worker-cicd` | 192.168.1.31 | 4 | 6 GB | K3s worker — `workload=cicd` |
 | `ci-runner` | 192.168.1.32 | 2 | 4 GB | K3s worker — `workload=runner`, builds Tekton |
-| `netbox-vm` | 192.168.1.72 | 1 | 2 GB | NetBox IPAM (já deployado) |
+
+> `netbox-vm` (192.168.1.72) foi **removida daqui** — na verdade sempre foi
+> um CT LXC (100), não uma VM, e desde 2026-09-18 roda em `pve2`, não `virt`
+> (ver seção 2.3). `virt` estava em ~93% de memória usada (16GB quase
+> saturados pelas 3 VMs do K3s + CT `homepage` + VM `haos15.2`/Home
+> Assistant); mover `netbox` e `bookstack` para `pve2` aliviou para ~79%.
+
+### 2.2b VM no Proxmox (`pve2` — adicionada 2026-09-18)
+
+| VM | IP | vCPU | RAM | Papel |
+|---|---|---|---|---|
+| `k3s-worker-pve2` | 192.168.1.33 | 2 | 3 GB | K3s worker — `workload=general` (sem afinidade fixa, alívio de carga de `k3s-worker-cicd`) |
+
+Provisionada via `qm clone` (local em `virt`) + `qm migrate --with-local-disks`
+para `pve2` (clone cross-node direto falha — `local-lvm` não é storage
+compartilhado). Terraform equivalente já escrito em `terraform/proxmox/` mas
+não importado no state — ver `docs/runbook.md` P24.
 
 ### 2.3 LXCs no Proxmox (`pve2` — GPU NVIDIA GTX 1060, 7.7 GB RAM)
 
@@ -77,11 +93,15 @@ Containers LXC nativos (systemd, sem Docker — Proxmox community-scripts), fora
 
 | LXC | CT ID | IP | Papel |
 |---|---|---|---|
-| `ollama` | 101 | 192.168.1.84 | Ollama v0.30.10 — inferência local (modelos qwen2.5), API OpenAI-compat `:11434` |
+| `ollama` | 101 | 192.168.1.84 | Ollama v0.30.10 — inferência local (modelos qwen2.5), API OpenAI-compat `:11434`. **Parado desde 2026-09-18** (0% uso de GPU/CPU em 30 dias de métricas — ver `context/facts/ollama-lab.md`) |
 | `immich` | 103 | 192.168.1.85 | Immich v3.0.3 — galeria de fotos self-hosted, Web/API `:2283`, Postgres+vectorchord local, biblioteca via NFS (`/mnt/immich-library`) |
 | `omniroute` | 107 | 192.168.1.117 (DHCP) | OmniRoute v3.8.49 — AI Gateway multi-provider (~144 modelos/14 providers), OpenAI-compat `:20128/v1` |
+| `netbox` | 100 | 192.168.1.72 | NetBox IPAM — **migrado de `virt` em 2026-09-18** (alívio de memória) |
+| `bookstack` | 106 | 192.168.1.76 | Wiki interna do lab — **migrado de `virt` em 2026-09-18** |
 
-> Ambos `immich` e `ollama` disputam a mesma GPU — hoje o Immich ML roda em CPU para evitar contenção de VRAM com o Ollama.
+> `immich` e `ollama` disputavam a mesma GPU — com o Ollama parado, essa
+> contenção desaparece; ativar CUDA no Immich ML (hoje em CPU) passa a ser
+> viável sem trade-off de VRAM.
 
 ---
 
@@ -102,19 +122,23 @@ flowchart TD
                 VM_SERVER["k3s-server\n2vCPU / 4GB\n192.168.1.30"]
                 VM_CICD["k3s-worker-cicd\n4vCPU / 6GB\n192.168.1.31"]
                 VM_RUNNER["ci-runner\n2vCPU / 4GB\n192.168.1.32"]
-                VM_NETBOX["netbox-vm\n192.168.1.72"]
             end
-            PVE --> VM_SERVER & VM_CICD & VM_RUNNER & VM_NETBOX
+            PVE --> VM_SERVER & VM_CICD & VM_RUNNER
         end
 
         subgraph PVE2H["pve2 — Intel i5-3330 | 7.7GB | 192.168.1.21 | Proxmox VE 9.2.3 | GPU GTX 1060"]
             PVE2["Proxmox VE"]
+            subgraph VMS2["VM KVM"]
+                VM_PVE2["k3s-worker-pve2\n2vCPU / 3GB\n192.168.1.33\nworkload=general"]
+            end
             subgraph LXCS["LXCs nativos (systemd) — GPU compartilhada"]
-                LXC_OLLAMA["ollama (CT 101)\n192.168.1.84:11434"]
+                LXC_OLLAMA["ollama (CT 101)\n192.168.1.84:11434\nPARADO desde 2026-09-18"]
                 LXC_IMMICH["immich (CT 103)\n192.168.1.85:2283"]
                 LXC_OMNI["omniroute (CT 107)\n192.168.1.117:20128"]
+                LXC_NETBOX["netbox (CT 100)\n192.168.1.72\nmigrado de virt"]
+                LXC_BOOKSTACK["bookstack (CT 106)\n192.168.1.76\nmigrado de virt"]
             end
-            PVE2 --> LXC_OLLAMA & LXC_IMMICH & LXC_OMNI
+            PVE2 --> VM_PVE2 & LXC_OLLAMA & LXC_IMMICH & LXC_OMNI & LXC_NETBOX & LXC_BOOKSTACK
         end
 
         subgraph I5["notebook-i5 — Intel i5-2450M | 8GB | 192.168.1.67"]
@@ -125,7 +149,7 @@ flowchart TD
             K3S_RPI["k3s agent — hostname: raspneto\nworkload=edge | arch=arm\nPromtail | node-exporter"]
         end
 
-        VM_SERVER <-->|"K3s cluster — Flannel VXLAN"| VM_CICD & VM_RUNNER & K3S_I5 & K3S_RPI
+        VM_SERVER <-->|"K3s cluster — Flannel VXLAN"| VM_CICD & VM_RUNNER & VM_PVE2 & K3S_I5 & K3S_RPI
         LXC_OLLAMA -.->|"OpenAI-compat API\n(consumido pelo namespace ai)"| VM_SERVER
 
         SWITCH["Switch L2 / Gateway 192.168.1.254"]
@@ -146,13 +170,18 @@ flowchart TD
 | `k3s-server` | 192.168.1.30 | control-plane | `node-role.kubernetes.io/master=true` | Ready |
 | `k3s-worker-cicd` | 192.168.1.31 | worker | `workload=cicd` | Ready |
 | `ci-runner` | 192.168.1.32 | worker | `workload=runner` | Ready |
+| `k3s-worker-pve2` | 192.168.1.33 | worker | `workload=general`, `hypervisor=pve2` | Ready — desde 2026-09-18 |
 | `ubuntu-neto` | 192.168.1.67 | worker | `workload=monitoring` | Ready |
 | `raspneto` | 192.168.1.110 | worker | `workload=edge`, `kubernetes.io/arch=arm` | Ready |
 
 > **Nota:** o IP do `ubuntu-neto` mudou de `.65` para `.67` após um crash em 2026-06. Esse nó é
 > **SPOF** (ponto único de falha) do stack de observabilidade e do `shared-infra`
 > (Postgres/Redis) — carrega PVCs `local-path` ancorados nele. Se cair, as aplicações
-> `amfit` e `realtpmsys` ficam sem banco de dados.
+> `amfit` e `realtpmsys` ficam sem banco de dados. **Ainda não mitigado** — o
+> novo `k3s-worker-pve2` (2026-09-18) resolve o desbalanceamento de carga
+> entre nós, mas não move nenhum PVC/workload pra fora de `ubuntu-neto`; o
+> SPOF do monitoring/shared-infra continua o mesmo até uma migração real de
+> dados ser feita.
 
 ### 4.2 Diagrama de workloads por nó
 
