@@ -417,7 +417,7 @@ step_ingress_nginx() {
 #   1. Domínio ativo no Cloudflare.
 #   2. `cloudflared tunnel create lab-edge` — anota o tunnel ID.
 #   3. Preencher kubernetes/edge/cloudflared/configmap.yaml (tunnel ID +
-#      domínio real) e criar o CNAME wildcard *.pub.<dominio> apontando
+#      domínio real) e criar o CNAME wildcard *.<dominio> (um nível) apontando
 #      pro túnel.
 #   4. Secret cloudflared-credentials aplicado (via SealedSecret, nunca
 #      Secret puro comitado — ver secrets/README.md).

@@ -517,7 +517,10 @@ Internet -> Cloudflare (DNS+WAF) -> cloudflared (outbound, namespace edge)
   `Ingress` expondo **só a rota de integração** (ex.: `/webhooks/<provider>`),
   nunca a aplicação inteira nem painéis administrativos — template em
   `kubernetes/edge/ingress-template.yaml`.
-- Hostname público usa wildcard (`*.pub.<domínio>`) coberto por um único
+- Hostname público usa wildcard de **um nível** (`*.amtech.app.br`) — o
+  Universal SSL gratuito do Cloudflare não cobre wildcard de dois níveis
+  (`*.pub.amtech.app.br` falhava com handshake failure, corrigido em
+  2026-09-18); coberto por um único
   registro DNS — onboarding de projeto novo não exige tocar em DNS nem no
   túnel, só aplicar o `Ingress` do projeto.
 - Credencial do túnel (`credentials.json`) segue o mesmo fluxo de segredos

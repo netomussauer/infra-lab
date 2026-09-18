@@ -107,7 +107,7 @@ spec:
       ports:
         - protocol: TCP
           port: 80
-    # ingress-nginx interno (namespace edge) — expõe hello.pub.<dominio>
+    # ingress-nginx interno (namespace edge) — expõe hello.amtech.app.br
     # publicamente via cloudflared, ver kubernetes/edge/. ADR-013.
     - from:
         - namespaceSelector:

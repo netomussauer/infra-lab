@@ -7,7 +7,7 @@
 # ADR-013.
 #
 # Túnel `lab-edge` (id cead65f3-e4e4-4bfd-84e4-6c853323c07c) e o CNAME
-# wildcard *.pub.amtech.app.br já foram criados via `cloudflared tunnel
+# wildcard *.amtech.app.br já foram criados via `cloudflared tunnel
 # create`/`route dns` em 2026-09-18. Falta só o Secret
 # `cloudflared-credentials` (ver deployment.yaml e secrets/README.md)
 # antes de aplicar este ConfigMap + o deployment.
@@ -34,7 +34,9 @@ data:
     ingress:
       # Único destino dentro do cluster — todo hostname público cai aqui.
       # Novo projeto = novo Ingress k8s no app dele, não uma linha nova aqui.
-      - hostname: "*.pub.amtech.app.br"
+      # Um nível só (*.amtech.app.br): o Universal SSL gratuito do Cloudflare
+      # não cobre wildcard de dois níveis (*.pub.amtech.app.br).
+      - hostname: "*.amtech.app.br"
         service: http://ingress-nginx-controller.edge.svc.cluster.local:80
       # catch-all obrigatório (cloudflared exige que a última regra não
       # tenha hostname) — qualquer coisa fora do padrão acima cai em 404

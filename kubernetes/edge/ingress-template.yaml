@@ -11,7 +11,7 @@
 #      PATH_DE_INTEGRACAO — expor só a rota específica de integração
 #      (ex.: /webhooks/<provider>), nunca a aplicação inteira nem painéis
 #      administrativos.
-#   3. O hostname já cai no wildcard *.pub.SEU-DOMINIO.TLD coberto pelo
+#   3. O hostname já cai no wildcard *.amtech.app.br coberto pelo
 #      túnel (configmap.yaml do cloudflared) — só criar registro DNS
 #      próprio se precisar de um hostname fora do padrão wildcard.
 #   4. Aplicar o Ingress + a NetworkPolicy (recomendado) no namespace do
@@ -34,7 +34,7 @@ metadata:
     kubernetes.io/ingress.class: "nginx"
 spec:
   rules:
-    - host: "NOME_DO_APP.pub.SEU-DOMINIO.TLD"
+    - host: "NOME_DO_APP.amtech.app.br"
       http:
         paths:
           - path: "/PATH_DE_INTEGRACAO"
