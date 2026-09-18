@@ -30,6 +30,13 @@ provider "proxmox" {
 # Provider NetBox — lê e registra IPs/VMs no IPAM antes de provisionar no Proxmox.
 # Os recursos do NetBox são declarados em netbox.tf; os IPs alocados lá são
 # referenciados aqui para eliminar valores hardcoded no cloud-init das VMs.
+#
+# CONHECIDO QUEBRADO em 2026-09-18: o provider e-breuninger/netbox v5.3.0 falha
+# na etapa de configure contra o NetBox 4.4.1 do lab ("0xc... not supported by
+# the TextConsumer"), bloqueando qualquer comando terraform no repo. Corrigir
+# antes de rodar terraform plan/apply/import aqui. Ver também: bpg/proxmox
+# v0.104.0 falhando em "cluster/resources" (401) durante import de VM contra
+# Proxmox VE 9.2.3 — investigar/atualizar os dois providers juntos.
 provider "netbox" {
   server_url           = var.netbox_url
   api_token            = var.netbox_token
@@ -273,6 +280,85 @@ resource "proxmox_virtual_environment_vm" "ci_runner" {
     ip_config {
       ipv4 {
         address = netbox_ip_address.ci_runner.ip_address
+        gateway = var.gateway
+      }
+    }
+
+    dns {
+      servers = var.dns_servers
+      domain  = "lab.local"
+    }
+  }
+
+  boot_order    = ["virtio0"]
+  scsi_hardware = "virtio-scsi-pci"
+  machine       = "pc"
+  bios          = "seabios"
+
+  tags = local.common_tags
+
+  lifecycle {
+    ignore_changes = [
+      network_device[0].mac_address,
+      clone[0].vm_id,
+    ]
+  }
+}
+
+# ---------------------------------------------------------------------------
+# VM: k3s-worker-pve2 — worker no segundo host Proxmox (pve2), sem afinidade
+# fixa — alívio de carga do cluster (ver infra-lab/context/facts/proxmox-cluster.md)
+# ---------------------------------------------------------------------------
+
+resource "proxmox_virtual_environment_vm" "k3s_worker_pve2" {
+  name        = "k3s-worker-pve2"
+  description = "Nó worker K3s em pve2 — distribui workload do lab-k8s-01. Gerenciado pelo Terraform."
+  node_name   = var.proxmox_node_pve2
+  vm_id       = 203
+
+  clone {
+    vm_id = var.vm_template_id
+    full  = true
+  }
+
+  cpu {
+    cores = 2
+    type  = "x86-64-v2-AES"
+  }
+
+  memory {
+    dedicated = 3072
+  }
+
+  disk {
+    datastore_id = var.vm_storage
+    interface    = "virtio0"
+    size         = 40
+    file_format  = "raw"
+    discard      = "on"
+  }
+
+  network_device {
+    bridge = var.vm_bridge
+    model  = "virtio"
+  }
+
+  agent {
+    enabled = true
+    trim    = true
+  }
+
+  # IP lido do objeto netbox_ip_address.k3s_worker_pve2 criado em netbox.tf.
+  initialization {
+    user_account {
+      username = local.cloud_init_user
+      keys     = [var.ssh_public_key]
+      password = null
+    }
+
+    ip_config {
+      ipv4 {
+        address = netbox_ip_address.k3s_worker_pve2.ip_address
         gateway = var.gateway
       }
     }

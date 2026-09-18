@@ -44,6 +44,12 @@ variable "proxmox_node" {
   default     = "notebook-i7"
 }
 
+variable "proxmox_node_pve2" {
+  description = "Nome do segundo nó Proxmox (GPU, capacidade extra) onde VMs de alívio de carga são criadas"
+  type        = string
+  default     = "pve2"
+}
+
 variable "vm_storage" {
   description = "Storage do Proxmox onde os discos das VMs serão alocados"
   type        = string

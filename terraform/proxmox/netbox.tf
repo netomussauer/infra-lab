@@ -119,6 +119,15 @@ resource "netbox_ip_address" "ci_runner" {
   depends_on = [netbox_prefix.management]
 }
 
+# IP do nó worker K3s no segundo host Proxmox (pve2) — alívio de carga
+resource "netbox_ip_address" "k3s_worker_pve2" {
+  ip_address  = "192.168.1.33/24"
+  status      = "active"
+  description = "k3s-worker-pve2"
+
+  depends_on = [netbox_prefix.management]
+}
+
 # ---------------------------------------------------------------------------
 # Endereços IP — hosts físicos (bare metal, não gerenciados pelo Terraform)
 # ---------------------------------------------------------------------------
@@ -283,4 +292,17 @@ resource "netbox_virtual_machine" "ci_runner" {
   status       = "active"
   tags         = [netbox_tag.lab.name]
   comments     = "Executor de pipelines CI (Tekton runner). IP: 192.168.1.32. Gerenciado pelo Terraform."
+}
+
+# VM worker K3s no segundo host Proxmox (pve2)
+resource "netbox_virtual_machine" "k3s_worker_pve2" {
+  name         = "k3s-worker-pve2"
+  cluster_id   = netbox_cluster.proxmox_lab.id
+  tenant_id    = netbox_tenant.lab.id
+  vcpus        = "2.00"
+  memory_mb    = 3072
+  disk_size_mb = 40960
+  status       = "active"
+  tags         = [netbox_tag.lab.name]
+  comments     = "Worker K3s em pve2 — alívio de carga. IP: 192.168.1.33. Gerenciado pelo Terraform."
 }
