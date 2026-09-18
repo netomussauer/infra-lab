@@ -47,7 +47,7 @@ Laboratório completo de infraestrutura home-lab com cluster Kubernetes K3s mult
 | Documento | Conteúdo |
 | --- | --- |
 | [docs/architecture.md](docs/architecture.md) | Topologia, inventário de hardware, diagrama do cluster, componentes por namespace |
-| [docs/adr.md](docs/adr.md) | 12 Architecture Decision Records — por que cada tecnologia foi escolhida |
+| [docs/adr.md](docs/adr.md) | 13 Architecture Decision Records — por que cada tecnologia foi escolhida |
 | [docs/runbook.md](docs/runbook.md) | Procedimentos de instalação, operações day-2 e P1–P19 de troubleshooting |
 
 ## Estrutura do repositório
@@ -57,7 +57,7 @@ infra-lab/
 ├── docs/
 │   ├── architecture.md          # Topologia, hardware, cluster — leia primeiro
 │   ├── adr.md                   # Decisões de design (K3s, Harbor, Tekton, etc.)
-│   └── runbook.md               # Instalação, day-2 ops, troubleshooting P1-P19
+│   └── runbook.md               # Instalação, day-2 ops, troubleshooting P1-P25
 │
 ├── terraform/proxmox/
 │   ├── main.tf                  # VMs no Proxmox (IPs via NetBox)
@@ -146,6 +146,14 @@ infra-lab/
 │   │   ├── controller-upstream.yaml # Manifesto oficial do release v0.36.6
 │   │   ├── kustomization.yaml       # Patches do lab (nodeSelector amd64, labels)
 │   │   └── pub-cert.pem             # Cert público — encryption offline pelos devs
+│   ├── edge/                        # Exposição pública (aguardando domínio — ver ADR-013)
+│   │   ├── ingress-nginx/
+│   │   │   └── helm-values.yaml     # IngressController interno, Service ClusterIP
+│   │   ├── cloudflared/
+│   │   │   ├── configmap.yaml       # Rotas do túnel (placeholders: tunnel ID + domínio)
+│   │   │   ├── deployment.yaml
+│   │   │   └── networkpolicy.yaml
+│   │   └── ingress-template.yaml    # Template de onboarding p/ projeto novo (amfit, amactive, ...)
 │   └── apps/
 │       └── hello-lab/
 │           ├── deployment.yaml

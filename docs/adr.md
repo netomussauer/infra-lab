@@ -464,3 +464,117 @@ Distribuídas via o mesmo fluxo SOPS+age já existente (`secrets/env.agent.enc.y
 - `notebook-i5` (`ubuntu-neto`) ainda não recebeu o usuário `agente-ia` — a chave `labadmin` estava falhando lá no momento da implementação (problema pré-existente, não causado por isso). Pendente de correção separada.
 - Vault permanece como opção de fase futura, condicional: só revisitar se o lab virar multi-agente/multi-operador ou precisar de secrets dinâmicos em escala — nesse caso rodaria como LXC dedicado em `virt` (mais headroom), fora do K3s, com unseal manual (sem KMS de nuvem disponível).
 - O controller em `kube-system` segue a convenção oficial do projeto. Migrar para namespace dedicado (`sealed-secrets`) é possível mas exige `--controller-namespace` em todo `kubeseal` — fricção alta para todos os projetos.
+
+---
+
+## ADR-013
+
+**Título:** Cloudflare Tunnel + ingress-nginx interno para expor endpoints públicos (vs. port-forward direto no roteador, vs. VPS reverse proxy, vs. Tailscale Funnel)
+
+**Status:** Aceito
+
+**Contexto:**
+
+Quatro projetos hospedados neste lab (`amfit`, `amactive`, `realtpmsys`,
+`training-performance-hub`) precisam de endpoints alcançáveis pela internet
+para integração com aplicações externas (ex.: webhooks). Até 2026-09-18 o
+lab não expunha nada publicamente: rede inteira em `192.168.1.0/24`
+residencial, sem Ingress Controller ativo (Traefik do K3s desabilitado
+desde a instalação — ver `ansible/playbooks/03-k3s-server.yml`), sem
+domínio, sem qualquer porta aberta no roteador. É greenfield: nenhuma
+exposição existente para migrar, decisão livre de dívida técnica prévia.
+Como é residencial, IP WAN é dinâmico e não há orçamento/necessidade de
+infraestrutura dedicada de borda — a solução precisa ser barata, não abrir
+portas no roteador de casa (superfície de ataque direta sobre a rede
+doméstica) e, principalmente, **escalar sem retrabalho** conforme novos
+projetos passarem a precisar do mesmo tipo de endpoint.
+
+**Alternativas consideradas:**
+
+| Critério | Cloudflare Tunnel (`cloudflared`) + ingress-nginx interno | Port-forward direto + DynDNS + Let's Encrypt | VPS pequena como jump box (reverse proxy sobre WireGuard) | Tailscale Funnel |
+| --- | --- | --- | --- | --- |
+| Portas abertas no roteador residencial | Nenhuma — conexão outbound-only do `cloudflared` para a borda Cloudflare | 80/443 expostas diretamente, IP residencial visível | Nenhuma no roteador de casa, mas a VPS em si tem portas públicas | Nenhuma |
+| Custo | Zero (tier free cobre DNS, WAF básico, túnel ilimitado) | Zero (fora o domínio) | Mensalidade de VPS (~US$5+/mês) | Zero, mas free tier tem limites de uso mais agressivos |
+| Esforço para adicionar um projeto novo | Só um `Ingress` k8s no projeto (ver `kubernetes/edge/ingress-template.yaml`) — nada muda na borda | Novo subdomínio/DNS + config manual de proxy reverso por app | Nova entrada de proxy na VPS por app — mais um lugar pra manter em dia | Novo Funnel por serviço — sem camada de roteamento única |
+| Proteção na borda | WAF + DDoS + rate limiting nativos do Cloudflare | Nenhuma — fica sob responsabilidade do proxy local | Depende do que for configurado manualmente na VPS | Limitada, sem WAF completo |
+| Maturidade para receber webhooks de terceiros em produção | Alta — caso de uso padrão documentado pela Cloudflare | Alta, mas com mais superfície pra manter segura | Alta, mas com mais infra pra operar | Menor — mais voltado a acesso ponto-a-ponto que ingestão pública |
+
+**Decisão:** Usar **Cloudflare Tunnel** como única via de entrada pública do
+lab, terminando sempre em um **ingress-nginx interno** (namespace `edge`,
+`Service` `ClusterIP` — nunca `LoadBalancer`/`NodePort`), que por sua vez
+roteia por hostname/path usando o recurso `Ingress` padrão do Kubernetes,
+um por projeto:
+
+```text
+Internet -> Cloudflare (DNS+WAF) -> cloudflared (outbound, namespace edge)
+         -> ingress-nginx (ClusterIP, namespace edge) -> Ingress de cada app
+```
+
+- `cloudflared` conhece só um destino fixo (o ingress-nginx interno) — isso
+  nunca muda ao adicionar projetos (`kubernetes/edge/cloudflared/`).
+- Cada projeto (`amfit`, `amactive`, `realtpmsys`,
+  `training-performance-hub`, ou qualquer um futuro) ganha seu próprio
+  `Ingress` expondo **só a rota de integração** (ex.: `/webhooks/<provider>`),
+  nunca a aplicação inteira nem painéis administrativos — template em
+  `kubernetes/edge/ingress-template.yaml`.
+- Hostname público usa wildcard (`*.pub.<domínio>`) coberto por um único
+  registro DNS — onboarding de projeto novo não exige tocar em DNS nem no
+  túnel, só aplicar o `Ingress` do projeto.
+- Credencial do túnel (`credentials.json`) segue o mesmo fluxo de segredos
+  já estabelecido: SOPS+age para distribuição (`secrets/env.cloudflared.enc.yaml`,
+  ver ADR-011/012) e SealedSecret para o que o cluster consome
+  (`kubernetes/edge/cloudflared/sealedsecret.yaml`, gerado localmente —
+  nunca um `Secret` puro comitado).
+- `NetworkPolicy` (`kubernetes/edge/cloudflared/networkpolicy.yaml`) limita
+  o `cloudflared` a falar só com o ingress-nginx interno + DNS + a borda do
+  Cloudflare, e o ingress-nginx interno a aceitar tráfego só do
+  `cloudflared` (+ Prometheus para métricas) — nenhum dos dois alcança
+  outro pod/namespace do lab.
+
+**Justificativa:**
+
+- Resolve o requisito central (4 projetos hoje, mais no futuro) sem que
+  cada projeto novo exija uma mudança de infraestrutura — só um `Ingress`
+  no próprio manifest do projeto, o padrão do Kubernetes que qualquer dev
+  já conhece.
+- Elimina a única fonte real de risco adicional de uma exposição pública
+  em ambiente residencial: nenhuma porta fica aberta no roteador, o IP WAN
+  de casa nunca é publicado, e o tráfego passa por WAF/DDoS/rate limiting
+  antes de chegar ao cluster.
+- ingress-nginx interno (em vez de reativar o Traefik do K3s) segue a
+  decisão já registrada no comentário do próprio
+  `ansible/playbooks/03-k3s-server.yml` ("usaremos ingress-nginx +
+  MetalLB") — não introduz um terceiro padrão de Ingress Controller no
+  cluster, só termina de implementar o que já estava planejado, com
+  `Service` `ClusterIP` em vez de `LoadBalancer` porque o único cliente é
+  o `cloudflared` dentro do próprio cluster.
+- VPS como jump box resolveria o mesmo problema, mas adiciona custo
+  recorrente e mais um sistema a manter atualizado/seguro — inconsistente
+  com a frugalidade de recursos já documentada como princípio do lab
+  (mesma lógica usada para rejeitar Vault nos ADR-011/012).
+- Tailscale Funnel foi descartado por ser menos maduro especificamente
+  para o caso de uso (ingestão de webhooks de terceiros, não acesso
+  ponto-a-ponto de um usuário autenticado).
+
+**Consequências:**
+
+- Registro de domínio e ativação da zona no Cloudflare são pré-requisitos
+  manuais (ação humana, fora do escopo de automação) antes de qualquer
+  aplicação dos manifests em `kubernetes/edge/`. Até lá, os manifests
+  ficam preparados mas não aplicados — ver placeholders documentados em
+  `kubernetes/edge/cloudflared/configmap.yaml`.
+- `step_ingress_nginx` e `step_cloudflared` em `scripts/k8s-bootstrap.sh`
+  são etapas **manuais**, fora do fluxo automático de `main()` — exigem
+  domínio + tunnel ID + `Secret cloudflared-credentials` já aplicados, e
+  falham deliberadamente (`exit 1`) se os placeholders não tiverem sido
+  preenchidos, para não travar um bootstrap completo do zero.
+- Onboarding de projeto novo tem um procedimento documentado e repetível
+  (`kubernetes/edge/ingress-template.yaml`) — qualquer projeto além dos 4
+  atuais segue o mesmo caminho, sem decisão de arquitetura nova.
+- Se o volume de tráfego público crescer a ponto do tier free do
+  Cloudflare não bastar (rate limits, WAF avançado), a migração para um
+  tier pago é apenas configuração — a topologia (túnel único +
+  ingress-nginx + `Ingress` por app) não muda.
+- Painéis administrativos (Grafana, ArgoCD, Harbor, K8s API, NetBox)
+  continuam deliberadamente fora deste túnel — só rotas de integração
+  específicas de cada projeto são expostas.

@@ -1219,3 +1219,30 @@ Confirmado que **não é problema de credencial** — o mesmo token (`root@pam!r
 **Solução (não aplicada ainda):** atualizar os dois providers para a versão mais recente disponível (`bpg/proxmox` e `e-breuninger/netbox`) e revalidar `terraform init`/`plan`/`import` antes de qualquer `apply` real. Só depois disso reconciliar o state com `terraform import` nas 4 VMs + todos os recursos de `netbox.tf` (ip_addresses, virtual_machines, prefixes, tags, site, tenant, cluster — nenhum está no state hoje).
 
 **Workaround usado em 2026-09-18** para criar a VM `k3s-worker-pve2` sem depender do Terraform: clone manual via API do Proxmox (`qm clone` + `qm migrate` entre nós, já que clone direto cross-node falha com storage local não-compartilhado) + Ansible normal (`01-base-setup.yml` → `04-k3s-agents.yml` → `05-post-setup.yml`). O código Terraform equivalente já está escrito em `main.tf`/`netbox.tf`/`variables.tf`, só não foi importado.
+
+### P25: Edge/Cloudflare Tunnel — dois gotchas na implantação inicial (2026-09-18)
+
+Encontrados durante a implantação do `kubernetes/edge/` (túnel público, ver [ADR-013](./adr.md#adr-013)). Nenhum dos dois é bug de infra real — ambos são efeito de decisões de design deste próprio lab que precisam ser lembradas ao reaplicar ou depurar o namespace `edge`.
+
+**1. Admission webhook do ingress-nginx falha com "502 Bad Gateway" ao criar/editar qualquer `Ingress`:**
+
+```text
+Internal error occurred: failed calling webhook "validate.nginx.ingress.kubernetes.io":
+failed to call webhook: Post "https://ingress-nginx-controller-admission.edge.svc:443/...":
+proxy error from 127.0.0.1:6443 while dialing 10.42.x.x:8443, code 502: 502 Bad Gateway
+```
+
+Causa: o apiserver conecta direto no pod IP do controller na porta `8443` — sem identidade de pod/namespace, então a `NetworkPolicy` do controller (`kubernetes/edge/cloudflared/networkpolicy.yaml`) precisa de uma regra `ipBlock: 0.0.0.0/0` liberando essa porta especificamente (só valida sintaxe de `Ingress`, não expõe tráfego de aplicação). Sem essa regra, a validação falha **cluster-wide, independente do nó onde o controller está rodando** — não confunda com um problema de rede do `k3s-worker-pve2` (foi a primeira hipótese testada e descartada). A regra já está no manifest atual; se recriar a `NetworkPolicy` do zero, não esquecer dela.
+
+**2. `kubectl apply` manual em recurso gerenciado pelo ArgoCD é revertido em segundos:**
+
+Qualquer app sob `kubernetes/apps/` (ex. `hello-lab`) é sincronizado pelo `app-of-apps` do ArgoCD com self-heal ativo. Editar o `Ingress`/`NetworkPolicy` localmente e aplicar com `kubectl apply` funciona só até o próximo ciclo de reconciliação (segundos, não minutos) — o ArgoCD reverte pro estado do Git automaticamente. Sintoma confuso: parece um problema de rede/CNI intermitente (a mudança "não pega"), mas na verdade é o `NetworkPolicy` antigo voltando.
+
+**Fix:** commitar + dar push antes de validar (`git push origin main` — o `app-of-apps` aponta pro GitHub direto, não pro Gitea, ver `kubernetes/cicd/argocd/app-of-apps.yaml`). Para forçar sync imediato sem esperar o polling padrão do ArgoCD:
+
+```bash
+kubectl patch application app-of-apps -n cicd --type merge \
+  -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
+```
+
+**Implicação para onboarding de projetos novos** (`kubernetes/edge/ingress-template.yaml`): se `amfit`/`amactive`/`realtpmsys`/`training-performance-hub` também forem ArgoCD-managed (confirmado para os 3 primeiros via `kubectl get application -n cicd`), o `Ingress`/`NetworkPolicy` do template só entra em vigor de verdade depois de commitado no repo de cada projeto — testar com `kubectl apply` direto dá falso negativo se o self-heal reverter antes da validação.

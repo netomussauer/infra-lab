@@ -123,6 +123,31 @@ usuário `agente-ia` dos nós (Ansible) — e por fim rotacionar/reencriptar
 `env.agent.enc.yaml` com os valores novos, igual ao fluxo de qualquer outro
 secret deste diretório.
 
+## Credencial do túnel Cloudflare (exposição pública)
+
+`env.cloudflared.enc.yaml` guarda `CLOUDFLARE_TUNNEL_CREDENTIALS_JSON` — o
+conteúdo do `credentials.json` gerado por `cloudflared tunnel create
+lab-edge` (ver `docs/adr.md` ADR-013 e `kubernetes/edge/cloudflared/`). É a
+única credencial deste diretório que **não** vai direto para um arquivo de
+uso local: `./scripts/secrets-refresh.sh` materializa em
+`~/.cloudflared/credentials.json` só como insumo para gerar o `Secret`
+Kubernetes real, que precisa ser selado antes de ir pro cluster:
+
+```bash
+kubectl create secret generic cloudflared-credentials \
+  --from-file=credentials.json=$HOME/.cloudflared/credentials.json \
+  --namespace=edge \
+  --dry-run=client -o yaml \
+  | ./scripts/seal-secret.sh /dev/stdin > kubernetes/edge/cloudflared/sealedsecret.yaml
+```
+
+O `SealedSecret` resultante é seguro para commit (mesmo padrão do
+ADR-011) — o `Secret` puro (`$HOME/.cloudflared/credentials.json`) nunca é.
+
+**Revogação**: `cloudflared tunnel delete lab-edge` no dashboard/CLI do
+Cloudflare invalida a credencial imediatamente, independente de apagar o
+`SealedSecret` do cluster.
+
 ## Ver também
 
 - `.sops.yaml` — configuração dos recipients (public keys)

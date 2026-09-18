@@ -508,6 +508,15 @@ NetBox (192.168.1.72) é a fonte centralizada de IPAM. O Terraform registra VMs 
 
 > Os workloads reais de IA (Ollama, Immich, OmniRoute) **não rodam no K3s** — são LXCs nativos no `pve2` (ver [§2.3](#23-lxcs-no-proxmox-pve2--gpu-nvidia-gtx-1060-77-gb-ram)). O namespace `ai` no cluster contém apenas o cliente (Open WebUI) e um exportador de métricas ponte.
 
+### `edge` (preparado, não implantado — ver ADR-013)
+
+| Componente | Nó | RAM request | RAM limit | Notas |
+|---|---|---|---|---|
+| ingress-nginx | qualquer amd64 | 50m CPU / 90 Mi | 200m CPU / 250 Mi | Service `ClusterIP` — único consumidor é o `cloudflared`, nunca exposto na LAN |
+| cloudflared | qualquer amd64 (2 réplicas) | 10m CPU / 32 Mi | 100m CPU / 128 Mi | Túnel outbound para a borda Cloudflare — nenhuma porta aberta no roteador residencial |
+
+> Exposição pública para integrações externas de `amfit`, `amactive`, `realtpmsys` e `training-performance-hub` (e qualquer projeto futuro). Manifests prontos em `kubernetes/edge/`, mas aplicação depende de domínio ativo no Cloudflare (pré-requisito manual, ainda pendente). Onboarding de projeto novo: `kubernetes/edge/ingress-template.yaml` — não requer mudança nesta camada.
+
 ### Estimativa de uso por nó
 
 | Nó | RAM disponível | RAM estimada | Margem |
