@@ -148,6 +148,35 @@ ADR-011) — o `Secret` puro (`$HOME/.cloudflared/credentials.json`) nunca é.
 Cloudflare invalida a credencial imediatamente, independente de apagar o
 `SealedSecret` do cluster.
 
+## Credencial do BookStack (scripts/bookstack-sync/)
+
+`env.bookstack.enc.yaml` (ainda não criado neste host — ver abaixo) guarda
+`BOOKSTACK_URL`, `BOOKSTACK_TOKEN_ID` e `BOOKSTACK_TOKEN_SECRET`, usados por
+`scripts/bookstack-sync/sync.py` para publicar `README.md`/`docs/*.md` no
+BookStack do lab (`192.168.1.76`). Ferramenta migrada de
+`infra-lab-proxmox` em 2026-09-22 (ver `docs/adr.md` ADR-014).
+
+Gerar o token: BookStack → Settings → API Tokens → Create Token. Depois,
+criar o arquivo localmente (nunca commitar o `.yaml` decriptado):
+
+```bash
+cat <<'EOF' > /tmp/bookstack-staging.yaml
+data:
+  BOOKSTACK_URL: "http://192.168.1.76:80"
+  BOOKSTACK_TOKEN_ID: "<token id gerado>"
+  BOOKSTACK_TOKEN_SECRET: "<token secret gerado>"
+EOF
+sops --encrypt --filename-override secrets/env.bookstack.enc.yaml \
+  /tmp/bookstack-staging.yaml > secrets/env.bookstack.enc.yaml
+shred -u /tmp/bookstack-staging.yaml
+```
+
+`./scripts/secrets-refresh.sh` materializa em `~/.env.bookstack` a partir
+daí — mesmo fluxo dos demais arquivos deste diretório.
+
+**Revogação**: apagar o token em BookStack → Settings → API Tokens invalida
+imediatamente, independente do arquivo `.enc.yaml` no repo.
+
 ## Ver também
 
 - `.sops.yaml` — configuração dos recipients (public keys)

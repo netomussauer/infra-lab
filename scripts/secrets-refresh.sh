@@ -111,6 +111,8 @@ export TF_VAR_proxmox_tls_insecure="$PROXMOX_TLS_INSECURE"
 EOF
 }
 [ -f "$SECRETS_DIR/env.omniroute.enc.yaml" ] && write_env_file "$SECRETS_DIR/env.omniroute.enc.yaml" "$HOME/.env.omniroute"
+# Credencial do BookStack (scripts/bookstack-sync/, ver docs/adr.md ADR-014)
+[ -f "$SECRETS_DIR/env.bookstack.enc.yaml" ] && write_env_file "$SECRETS_DIR/env.bookstack.enc.yaml" "$HOME/.env.bookstack"
 [ -f "$SECRETS_DIR/app-passwords.enc.yaml" ] && write_env_file "$SECRETS_DIR/app-passwords.enc.yaml" "$HOME/.env.lab-apps"
 
 # Credenciais de escopo reduzido para sessões de agente de IA (ver secrets/README.md

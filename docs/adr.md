@@ -23,6 +23,9 @@ Cada ADR documenta uma decisão de design tomada neste projeto: o contexto que l
 | [ADR-009](#adr-009) | NFSv3 para montagens de host — NAS Seagate Black Armor | Aceito |
 | [ADR-010](#adr-010) | Pi-hole como DNS interno do lab (vs dnsmasq, CoreDNS, VM dedicada) | Aceito |
 | [ADR-011](#adr-011) | Sealed Secrets como plataforma de gestão de secrets (vs SOPS, ExternalSecrets+Vault) | Aceito |
+| [ADR-012](#adr-012) | Credenciais de escopo reduzido para agentes de IA (vs. reuso das credenciais admin, vs. HashiCorp Vault) | Aceito |
+| [ADR-013](#adr-013) | Cloudflare Tunnel + ingress-nginx interno para expor endpoints públicos (vs. port-forward direto, vs. VPS reverse proxy, vs. Tailscale Funnel) | Aceito |
+| [ADR-014](#adr-014) | Descontinuar infra-lab-proxmox e migrar bookstack-sync/netbox-scripts para infra-lab | Aceito |
 
 ---
 
@@ -581,3 +584,51 @@ Internet -> Cloudflare (DNS+WAF) -> cloudflared (outbound, namespace edge)
 - Painéis administrativos (Grafana, ArgoCD, Harbor, K8s API, NetBox)
   continuam deliberadamente fora deste túnel — só rotas de integração
   específicas de cada projeto são expostas.
+
+---
+
+## ADR-014
+
+**Título:** Descontinuar `infra-lab-proxmox` e migrar `bookstack-sync`/scripts NetBox para `infra-lab`
+
+**Status:** Aceito
+
+**Contexto:**
+
+O repositório `infra-lab-proxmox` (`git@github.com:netomussauer/infra-lab-proxmox.git`, primeiro commit em 2026-04-13) foi o design original do laboratório: Kubernetes via `kubeadm` + Calico, CI/CD via Docker Compose, rede segmentada em VLANs (`10.10.0.0/24`, `10.20.0.0/24`, `10.30.0.0/24`), `lab_id: lab-k8s-proxmox-01`. Esse design nunca chegou a ser o ambiente real — foi substituído pelo que hoje é `infra-lab`: K3s + Flannel + MetalLB, Gitea/Harbor/ArgoCD/Tekton via Helm, rede única flat `192.168.1.0/24`, `lab_id: lab-k8s-01`. Os dois repositórios foram mantidos em paralelo por um tempo, criando risco de confusão sobre qual é a fonte da verdade e superfície extra para vazamento de credenciais (confirmado em 2026-09-22: um token de API do BookStack ficou em texto puro, não commitado, num arquivo do `infra-lab-proxmox` — revertido antes de chegar ao git, sem rotação solicitada pelo dono do lab).
+
+Uma auditoria de conteúdo do `infra-lab-proxmox` (46 arquivos versionados) encontrou:
+
+- **Terraform/Ansible (`terraform-proxmox/`, `terraform-cicd/`, `ansible-k8s/`, `ansible-cicd/`) e `docs/guide/01-04`:** descrevem a arquitetura antiga e superada — nada aqui precisa ser recuperado, porque a decisão de design já mudou.
+- **`docs/adr/README.md`:** só o template, nenhuma ADR de fato registrada.
+- **`scripts/bookstack-sync/sync.py`:** ferramenta Python ativa (refatorada recentemente de uma versão bash), sem equivalente no `infra-lab` — publica os docs do repo no BookStack real do lab.
+- **`scripts/netbox-get-available-ips.sh`/`netbox-sync-lab-ips.sh`:** scripts de integração com a API do NetBox, também sem equivalente no `infra-lab` (que só tem integração via provider Terraform + inventário dinâmico Ansible, ambos somente-leitura/alocação — nenhum descobre IPs ativos na rede).
+
+**Alternativas consideradas:**
+
+| Critério | Migrar o que é único e arquivar o resto | Manter os dois repositórios | Deletar o infra-lab-proxmox sem migrar |
+| --- | --- | --- | --- |
+| Risco de perder ferramentas úteis | Nenhum — `bookstack-sync` e scripts NetBox passam a viver no repo ativo | Nenhum, mas mantém duas fontes da verdade | Perde o sync do BookStack e os scripts de descoberta de IP permanentemente |
+| Superfície de vazamento de credenciais | Reduzida — só um repo com segredos do lab daqui pra frente | Dobrada — dois `secrets/`/`.env` possíveis | Reduzida, mas às custas de perder ferramentas |
+| Histórico do git | Preservado (arquivar, não deletar) | Preservado | Perdido (seria necessário confirmação explícita separada, não tomada aqui) |
+| Confusão sobre fonte da verdade | Resolvida — `infra-lab` passa a ser o único repo ativo | Não resolvida | Resolvida |
+
+**Decisão:**
+
+1. Migrar `scripts/bookstack-sync/sync.py` (+ `requirements.txt`) para `infra-lab/scripts/bookstack-sync/`, adaptado para sincronizar a estrutura real de docs deste repo (`README.md`, `docs/architecture.md`, `docs/adr.md`, `docs/runbook.md` — arquivo único por tema, não um diretório por página) em vez do layout `docs/adr/*.md` + `docs/guide/*.md` do repo original. Shelf renomeada de `infra-lab-proxmox` para `infra-lab` no BookStack.
+2. Migrar `scripts/netbox-get-available-ips.sh` (já genérico, sem mudanças) e `scripts/netbox-sync-lab-ips.sh` (adaptado: rede única `192.168.1.0/24` em vez de 4 VLANs, tag `lab-k8s-01` em vez de `lab-k8s-proxmox-01`) para `infra-lab/scripts/`.
+3. Credencial do BookStack segue o mesmo fluxo SOPS+age já estabelecido (`secrets/env.bookstack.enc.yaml`, ver `secrets/README.md`) — precisa ser gerada como token novo no BookStack, nunca reaproveitando o valor que vazou no `infra-lab-proxmox` (tratado como potencialmente comprometido).
+4. `infra-lab-proxmox` é **arquivado** no GitHub (read-only, histórico preservado, reversível) — não deletado.
+
+**Justificativa:**
+
+- A arquitetura do `infra-lab-proxmox` nunca foi implantada de verdade — arquivá-lo não descarta nenhuma decisão operacional em uso, só um protótipo já substituído.
+- `bookstack-sync` e os scripts NetBox são as únicas peças com valor operacional real e sem equivalente — migrá-los evita perda de trabalho ao encerrar o repositório.
+- Arquivar (não deletar) preserva o histórico do git para consulta futura, incluindo a auditoria de que nenhuma credencial real chegou a ser commitada — decisão reversível a qualquer momento via GitHub.
+- Consolidar em um único repositório ativo reduz a superfície de vazamento de credenciais e elimina a ambiguidade sobre qual repo é a fonte da verdade do lab.
+
+**Consequências:**
+
+- `scripts/bookstack-sync/sync.py` só funciona depois que `secrets/env.bookstack.enc.yaml` for criado com um token novo, gerado em BookStack → Settings → API Tokens — não há sincronização automática configurada por padrão ainda.
+- `scripts/netbox-sync-lab-ips.sh` foi adaptado para a rede real, mas seu uso continua opcional — o `infra-lab` já cobre alocação de IP via Terraform/NetBox provider sem depender de descoberta ativa por scan de rede.
+- `infra-lab-proxmox` arquivado continua acessível (read-only) para qualquer consulta futura ao design original, mas não recebe mais commits.

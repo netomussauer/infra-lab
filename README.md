@@ -47,7 +47,7 @@ Laboratório completo de infraestrutura home-lab com cluster Kubernetes K3s mult
 | Documento | Conteúdo |
 | --- | --- |
 | [docs/architecture.md](docs/architecture.md) | Topologia, inventário de hardware, diagrama do cluster, componentes por namespace |
-| [docs/adr.md](docs/adr.md) | 13 Architecture Decision Records — por que cada tecnologia foi escolhida |
+| [docs/adr.md](docs/adr.md) | 14 Architecture Decision Records — por que cada tecnologia foi escolhida |
 | [docs/runbook.md](docs/runbook.md) | Procedimentos de instalação, operações day-2 e P1–P19 de troubleshooting |
 
 ## Estrutura do repositório
@@ -164,8 +164,16 @@ infra-lab/
     ├── init-baremetal.sh        # Provisionamento inicial de hosts bare metal
     ├── k8s-bootstrap.sh         # Instala stack K8s completa via Helm
     ├── seal-secret.sh           # Wrapper de kubeseal — encripta Secrets como SealedSecret
+    ├── secrets-bootstrap.sh     # Setup de host novo (sops+age)
+    ├── secrets-refresh.sh       # Decripta secrets/*.enc.yaml para os paths locais
     ├── get-kubeconfig.sh        # Copia kubeconfig do k3s-server (Linux/macOS)
-    └── get-kubeconfig.ps1       # Copia kubeconfig do k3s-server (Windows/PowerShell)
+    ├── get-kubeconfig.ps1       # Copia kubeconfig do k3s-server (Windows/PowerShell)
+    ├── netbox-get-available-ips.sh  # External data source do Terraform — IPs livres no NetBox
+    ├── netbox-sync-lab-ips.sh       # Descoberta ativa de rede (nmap/ping) → sincroniza NetBox IPAM
+    └── bookstack-sync/          # Publica README.md/docs/*.md no BookStack (migrado de infra-lab-proxmox — ADR-014)
+        ├── sync.py
+        ├── requirements.txt
+        └── README.md
 ```
 
 ## Início rápido
