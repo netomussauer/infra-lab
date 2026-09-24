@@ -45,6 +45,7 @@ data:
 
     # Hosts físicos do lab
     address=/proxmox.lab.local/192.168.1.20
+    address=/pve2.lab.local/192.168.1.21
     address=/k3s-server.lab.local/192.168.1.30
     address=/k3s-worker-cicd.lab.local/192.168.1.31
     address=/ci-runner.lab.local/192.168.1.32
@@ -57,6 +58,8 @@ data:
     address=/immich.lab.local/192.168.1.85
     address=/photos.lab.local/192.168.1.85
     address=/omniroute.lab.local/192.168.1.117
+    # BookStack (CT 106 no pve2) — IP estático 192.168.1.64 desde 2026-09-24 (era DHCP; runbook P29)
+    address=/bookstack.lab.local/192.168.1.64
 
     # AMFIT (reserva — a alocar quando workloads subirem)
     address=/api.amfit.local/192.168.1.205

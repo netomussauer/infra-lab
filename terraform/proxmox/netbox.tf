@@ -181,7 +181,7 @@ resource "netbox_ip_address" "netbox_vm" {
 
 # BookStack — wiki / documentação interna do laboratório
 resource "netbox_ip_address" "bookstack" {
-  ip_address  = "192.168.1.76/24"
+  ip_address  = "192.168.1.64/24"
   status      = "active"
   description = "BookStack (wiki interna do lab)"
 

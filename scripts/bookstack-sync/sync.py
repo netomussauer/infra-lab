@@ -16,7 +16,7 @@ Uso:
     python sync.py [--dry-run] [--verbose] [--force]
 
 Variáveis de ambiente obrigatórias:
-    BOOKSTACK_URL           ex: http://192.168.1.76:80
+    BOOKSTACK_URL           ex: http://192.168.1.64:80
     BOOKSTACK_TOKEN_ID
     BOOKSTACK_TOKEN_SECRET
 """
@@ -822,7 +822,7 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Variáveis de ambiente obrigatórias:
-  BOOKSTACK_URL           URL base do BookStack (ex: http://192.168.1.76:80)
+  BOOKSTACK_URL           URL base do BookStack (ex: http://192.168.1.64:80)
   BOOKSTACK_TOKEN_ID      ID do token API
   BOOKSTACK_TOKEN_SECRET  Secret do token API
 

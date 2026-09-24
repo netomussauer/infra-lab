@@ -14,7 +14,7 @@ Laboratório completo de infraestrutura home-lab com cluster Kubernetes K3s mult
 | `192.168.1.33` | k3s-worker-pve2 *(VM @ pve2)* | Ubuntu 22.04 | K3s worker — `workload=general` (alívio de carga, sem afinidade fixa) — adicionado 2026-09-18 |
 | `192.168.1.65` | notebook-i5 — hostname: `ubuntu-neto` | Ubuntu 24.04 | K3s worker — monitoring |
 | `192.168.1.72` | `netbox` — CT 100 LXC no `pve2` *(migrado de `virt` em 2026-09-18)* | Debian (Proxmox community-script) | NetBox IPAM |
-| `192.168.1.76` | `bookstack` — CT 106 LXC no `pve2` *(migrado de `virt` em 2026-09-18)* | Debian (Proxmox community-script) | Wiki interna do lab |
+| `192.168.1.64` | `bookstack` — CT 106 LXC no `pve2` *(migrado de `virt` em 2026-09-18)* | Debian (Proxmox community-script) | Wiki interna do lab |
 | `192.168.1.84` | `ollama` — CT 101 LXC no `pve2` | Ubuntu (Proxmox community-script) | Ollama 0.30.10 — API `:11434` com GPU NVIDIA GTX 1060 (PCI passthrough). **Parado (não `onboot`) desde 2026-09-18** — 0% de uso de GPU/CPU confirmado em 30 dias de métricas; ver `context/facts/ollama-lab.md` |
 | `192.168.1.85` | `immich` — CT 103 LXC no `pve2` | Debian 13 (Proxmox community-script, systemd nativo) | Immich 3.0.3 — Web `:2283`; rootfs `local-lvm` (15GB), library NFS SeagateNAS (`/mnt/immich-library`, 200GB); GPU compartilhada com ollama |
 | `192.168.1.117` | `omniroute` (CT 107 LXC no `pve2`) | Debian 13 | OmniRoute v3.8.49 — AI Gateway multi-provider LLM (~144 modelos) · Web UI `http://192.168.1.117:20128` · OpenAI-compat `/v1` · Integrado com Continue.dev + Open-WebUI (DHCP — IP pode variar) |

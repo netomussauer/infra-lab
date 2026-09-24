@@ -1,7 +1,7 @@
 # bookstack-sync
 
 Script Python que sincroniza os documentos técnicos do `infra-lab` para o
-BookStack do laboratório (CT 106, `192.168.1.76`, ver `docs/architecture.md`
+BookStack do laboratório (CT 106, `192.168.1.64`, ver `docs/architecture.md`
 §2.3).
 
 Migrado de `infra-lab-proxmox` em 2026-09-22 e adaptado para a estrutura
@@ -49,7 +49,7 @@ manualmente num arquivo versionado — usar `./scripts/secrets-refresh.sh`
 `~/.env.bookstack` a partir de `secrets/env.bookstack.enc.yaml` (SOPS).
 
 ```bash
-export BOOKSTACK_URL="http://192.168.1.76:80"
+export BOOKSTACK_URL="http://192.168.1.64:80"
 export BOOKSTACK_TOKEN_ID="<gerado em Settings → API Tokens no BookStack>"
 export BOOKSTACK_TOKEN_SECRET="<idem>"
 ```

@@ -97,7 +97,7 @@ Containers LXC nativos (systemd, sem Docker — Proxmox community-scripts), fora
 | `immich` | 103 | 192.168.1.85 | Immich v3.0.3 — galeria de fotos self-hosted, Web/API `:2283`, Postgres+vectorchord local, biblioteca via NFS (`/mnt/immich-library`) |
 | `omniroute` | 107 | 192.168.1.117 (DHCP) | OmniRoute v3.8.49 — AI Gateway multi-provider (~144 modelos/14 providers), OpenAI-compat `:20128/v1` |
 | `netbox` | 100 | 192.168.1.72 | NetBox IPAM — **migrado de `virt` em 2026-09-18** (alívio de memória) |
-| `bookstack` | 106 | 192.168.1.76 | Wiki interna do lab — **migrado de `virt` em 2026-09-18** |
+| `bookstack` | 106 | 192.168.1.64 | Wiki interna do lab — **migrado de `virt` em 2026-09-18**; IP **estático** desde 2026-09-24 (era DHCP e mudou na migração — runbook P29) |
 
 > `immich` e `ollama` disputavam a mesma GPU — com o Ollama parado, essa
 > contenção desaparece; ativar CUDA no Immich ML (hoje em CPU) passa a ser
@@ -136,7 +136,7 @@ flowchart TD
                 LXC_IMMICH["immich (CT 103)\n192.168.1.85:2283"]
                 LXC_OMNI["omniroute (CT 107)\n192.168.1.117:20128"]
                 LXC_NETBOX["netbox (CT 100)\n192.168.1.72\nmigrado de virt"]
-                LXC_BOOKSTACK["bookstack (CT 106)\n192.168.1.76\nmigrado de virt"]
+                LXC_BOOKSTACK["bookstack (CT 106)\n192.168.1.64\nmigrado de virt"]
             end
             PVE2 --> VM_PVE2 & LXC_OLLAMA & LXC_IMMICH & LXC_OMNI & LXC_NETBOX & LXC_BOOKSTACK
         end

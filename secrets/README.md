@@ -153,7 +153,7 @@ Cloudflare invalida a credencial imediatamente, independente de apagar o
 `env.bookstack.enc.yaml` (ainda não criado neste host — ver abaixo) guarda
 `BOOKSTACK_URL`, `BOOKSTACK_TOKEN_ID` e `BOOKSTACK_TOKEN_SECRET`, usados por
 `scripts/bookstack-sync/sync.py` para publicar `README.md`/`docs/*.md` no
-BookStack do lab (`192.168.1.76`). Ferramenta migrada de
+BookStack do lab (`192.168.1.64`). Ferramenta migrada de
 `infra-lab-proxmox` em 2026-09-22 (ver `docs/adr.md` ADR-014).
 
 Gerar o token: BookStack → Settings → API Tokens → Create Token. Depois,
@@ -162,7 +162,7 @@ criar o arquivo localmente (nunca commitar o `.yaml` decriptado):
 ```bash
 cat <<'EOF' > /tmp/bookstack-staging.yaml
 data:
-  BOOKSTACK_URL: "http://192.168.1.76:80"
+  BOOKSTACK_URL: "http://192.168.1.64:80"
   BOOKSTACK_TOKEN_ID: "<token id gerado>"
   BOOKSTACK_TOKEN_SECRET: "<token secret gerado>"
 EOF
