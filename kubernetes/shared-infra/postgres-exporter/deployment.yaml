@@ -72,12 +72,15 @@ spec:
               port: metrics
             initialDelaySeconds: 10
             periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 6
           readinessProbe:
             httpGet:
               path: /metrics
               port: metrics
             initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 5
           securityContext:
             runAsNonRoot: true
             runAsUser: 65534

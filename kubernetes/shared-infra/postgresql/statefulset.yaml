@@ -89,7 +89,11 @@ spec:
                 - postgres
             initialDelaySeconds: 10
             periodSeconds: 10
-            failureThreshold: 3
+            # timeoutSeconds explícito: o padrão (1s) estourava sempre que o
+            # HDD do ubuntu-neto saturava (IO PSI ~40%), matando o pod por
+            # falso negativo. Ver docs/runbook.md P26.
+            timeoutSeconds: 5
+            failureThreshold: 6
             successThreshold: 1
 
           livenessProbe:
@@ -102,7 +106,8 @@ spec:
                 - postgres
             initialDelaySeconds: 30
             periodSeconds: 15
-            failureThreshold: 3
+            timeoutSeconds: 10
+            failureThreshold: 6
             successThreshold: 1
 
           startupProbe:
@@ -114,6 +119,7 @@ spec:
                 - -d
                 - postgres
             # Allows up to 5 minutes for initdb to complete on first boot
+            timeoutSeconds: 5
             failureThreshold: 30
             periodSeconds: 10
 
