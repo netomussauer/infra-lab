@@ -12,7 +12,7 @@
 #     design (vide https://github.com/pi-hole/docker-pi-hole). Forçar
 #     runAsNonRoot quebra o entrypoint. Mantemos privilegios mínimos via caps.
 #
-#   * nodeSelector workload=monitoring — fixa no ubuntu-neto (192.168.1.65),
+#   * nodeSelector workload=monitoring — fixa no ubuntu-neto (192.168.1.67),
 #     que tem disco SSD e 8GB RAM. Outros nós: k3s-server tem taint de
 #     control-plane, cicd/runner são para CI/CD, raspneto é ARM.
 #

@@ -48,7 +48,7 @@ data:
     address=/k3s-server.lab.local/192.168.1.30
     address=/k3s-worker-cicd.lab.local/192.168.1.31
     address=/ci-runner.lab.local/192.168.1.32
-    address=/ubuntu-neto.lab.local/192.168.1.65
+    address=/ubuntu-neto.lab.local/192.168.1.67
     address=/raspneto.lab.local/192.168.1.110
     address=/nas.lab.local/192.168.1.112
     address=/netbox.lab.local/192.168.1.72
