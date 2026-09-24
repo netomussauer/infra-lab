@@ -1246,3 +1246,18 @@ kubectl patch application app-of-apps -n cicd --type merge \
 ```
 
 **Implicação para onboarding de projetos novos** (`kubernetes/edge/ingress-template.yaml`): se `amfit`/`amactive`/`realtpmsys`/`training-performance-hub` também forem ArgoCD-managed (confirmado para os 3 primeiros via `kubectl get application -n cicd`), o `Ingress`/`NetworkPolicy` do template só entra em vigor de verdade depois de commitado no repo de cada projeto — testar com `kubectl apply` direto dá falso negativo se o self-heal reverter antes da validação.
+
+### P26: `ubuntu-neto` — IO do HDD saturado derruba pods e trava o containerd (2026-09-24)
+
+**Sintoma:** builds Tekton (pinados no nó) falhando com `TLS handshake timeout`, `containerd` com `failed to reserve container name`/`context deadline exceeded`, `postgresql-0`/`redis-0` ~5 min em `ContainerCreating` após reboot, SSH com `Connection timed out during banner exchange`, `kubectl top` mostrando só ~15% CPU / ~50% RAM.
+
+**Causa provável (não provada — SMART não foi lido):** o nó é um notebook com **um único HDD rotacional** (`sda`, `ROTA=1`) que hospeda containerd (31 GB), PVCs `local-path` (15 GB: Prometheus, Loki, Postgres, Redis, Pi-hole) e as camadas do kaniko. Medido: `%util` 74–99%, `r_await` 24–48 ms, `iowait` 39–73%, `/proc/pressure/io` `some avg10=41%`/`full 33%`; PSI de memória = 0 e swap = 0, então não é falta de RAM. Sob esse IO, `exec` probes com o `timeoutSeconds` padrão (1s) estouram, o kubelet mata os pods e gera restarts em cascata (`metallb-speaker` do nó: 6440 restarts em 147 dias, contra 4 nos outros nós). Agravantes: cabo negociado a **100 Mb/s** (`ethtool enp2s0`; deveria ser 1 Gb/s) e Ubuntu Desktop (GDM/GNOME/snaps) rodando no nó.
+
+**Mitigações aplicadas em 2026-09-24:**
+
+1. GDM parado e `default.target` = `multi-user.target` (reverter: `systemctl set-default graphical.target && systemctl start gdm3`).
+2. `timeoutSeconds` explícito (5–10s) e `failureThreshold: 6` nas sondas de `postgresql`, `redis` e `postgres-exporter` (`kubernetes/shared-infra/`) — um engasgo de IO deixa de matar o pod.
+3. Cabo de rede trocado: link voltou a **1000 Mb/s** (download real medido: 78,7 MB/s, antes ~12 MB/s).
+4. **Grafana movido para o `k3s-worker-pve2` (SSD)** — `grafana.nodeSelector` = `kubernetes.io/hostname: k3s-worker-pve2` em `kubernetes/monitoring/kube-prometheus-stack/helm-values.yaml`. Depois do boot pós-troca de cabo, o Grafana 13 (SQLite + reconstrução de índices `bleve`, em loop de `database is locked`) lia ~27 MB/s do HDD e mantinha o IO PSI em 80–94%. Procedimento: `scale --replicas=0`, `delete pvc kube-prometheus-stack-grafana` (perde usuários/preferências locais; dashboards e datasources voltam via sidecars), `helm upgrade`, `scale --replicas=1`. Resultado medido no `ubuntu-neto`: IO PSI `some avg10` 80–94% → 1,5%, `iowait` 60–83% → ~0%.
+
+**Pendente (correção durável):** builds Tekton fora do nó, ler SMART do disco e SSD no lugar do HDD (ou mover Pi-hole/Postgres/Redis/Prometheus/Loki para o worker do `pve2`, que tem SSD; hoje 47% de RAM usada lá, então há pouca folga além do Grafana). Diagnóstico: `iostat -x 1 3`, `cat /proc/pressure/io`, `ethtool enp2s0 | grep Speed`, `sudo smartctl -H -A /dev/sda` (smartmontools não estava instalado).

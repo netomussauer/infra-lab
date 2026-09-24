@@ -27,8 +27,12 @@ grafana:
   initChownData:
     enabled: false
 
+  # Movido do ubuntu-neto (HDD rotacional saturado) para o worker do pve2 (SSD)
+  # em 2026-09-24: o SQLite do Grafana 13 gerava ~27 MB/s de leitura e loop de
+  # `database is locked` no HDD, o maior consumidor de IO do nó. Ver
+  # docs/runbook.md P26. O PVC local-path fica ancorado no nó onde nasce.
   nodeSelector:
-    workload: "monitoring"
+    kubernetes.io/hostname: "k3s-worker-pve2"
 
   tolerations:
     # Notebook-i5 pode ter taints de manutenção — garantir tolerância
