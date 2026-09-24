@@ -13,8 +13,8 @@
 #   k3s-server      — taint control-plane:NoSchedule + label workload=control-plane
 #   k3s-worker-cicd — label workload=cicd
 #   ci-runner       — label workload=runner
-#   notebook-i5     — label workload=monitoring
-#   raspberry-pi    — label workload=edge (definido no inventário)
+#   ubuntu-neto     — label workload=monitoring
+#   raspneto        — label workload=edge (definido no inventário)
 #
 # Uso:
 #   ansible-playbook -i inventory/hosts.yml playbooks/05-post-setup.yml
@@ -42,11 +42,11 @@
         - "workload=general"
         - "node-role=worker"
         - "hypervisor=pve2"
-      notebook-i5:
+      ubuntu-neto:
         - "workload=monitoring"
         - "node-role=worker"
         - "hardware=bare-metal"
-      raspberry-pi:
+      raspneto:
         - "workload=edge"
         - "node-role=worker"
         - "hardware=bare-metal"
@@ -187,7 +187,7 @@
           - k3s-server      (192.168.1.30) — control-plane [NoSchedule]
           - k3s-worker-cicd (192.168.1.31) — worker cicd
           - ci-runner       (192.168.1.32) — worker runner
-          - notebook-i5     (192.168.1.65) — worker monitoring
-          - raspberry-pi    (192.168.1.110) — worker edge (arm)
+          - ubuntu-neto     (192.168.1.67) — worker monitoring
+          - raspneto        (192.168.1.110) — worker edge (arm)
           ============================================================
       tags: [k3s, verify]

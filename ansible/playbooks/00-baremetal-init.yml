@@ -1,6 +1,6 @@
 # Playbook 00-baremetal-init — Provisionamento inicial dos nós bare-metal.
 #
-# Executa em: lab_physical (notebook-i5 e raspberry-pi)
+# Executa em: lab_physical (ubuntu-neto e raspneto)
 # Pré-requisito:
 #   - Conectividade SSH com o usuário inicial do nó (pi, ubuntu, etc.)
 #   - A chave lab_id_rsa já deve estar em authorized_keys desse usuário,
@@ -18,13 +18,13 @@
 #
 # Uso (primeira vez — com senha):
 #   ansible-playbook -i inventory/hosts.yml playbooks/00-baremetal-init.yml \
-#     --limit notebook-i5,raspberry-pi \
+#     --limit ubuntu-neto,raspneto \
 #     -u <usuario_inicial> -k --ask-become-pass \
 #     -e "baremetal_init_user=<usuario_inicial>"
 #
 # Uso (após instalação da chave via init-baremetal.sh):
 #   ansible-playbook -i inventory/hosts.yml playbooks/00-baremetal-init.yml \
-#     --limit notebook-i5,raspberry-pi \
+#     --limit ubuntu-neto,raspneto \
 #     -u <usuario_inicial> --private-key ~/.ssh/lab_id_rsa
 
 ---

@@ -1,6 +1,6 @@
 # Playbook 04 — Instalação do K3s nos nós worker (agents).
 #
-# Executa em: k3s_agents (k3s-worker-cicd, ci-runner, notebook-i5, raspberry-pi)
+# Executa em: k3s_agents (k3s-worker-cicd, ci-runner, k3s-worker-pve2, ubuntu-neto, raspneto)
 # Idempotente: sim — verifica instalação e versão antes de instalar
 # Pré-requisito: playbook 03-k3s-server.yml deve ter sido executado antes
 #                (o token K3s precisa estar disponível em hostvars do server)
