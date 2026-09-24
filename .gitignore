@@ -76,6 +76,8 @@ id_ed25519
 # Exceção: cert PÚBLICO do Sealed Secrets controller (criptografia assimétrica
 # — público por design, usado pelos devs para encryption offline).
 !kubernetes/sealed-secrets/pub-cert.pem
+# CA PUBLICA do Harbor (sem chave privada) — o playbook 07 a instala nos nos (runbook P28)
+!kubernetes/cicd/harbor/harbor-ca.crt
 *_id_ed25519
 *.pub
 !*.pub.example

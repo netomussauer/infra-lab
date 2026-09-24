@@ -177,6 +177,14 @@ daí — mesmo fluxo dos demais arquivos deste diretório.
 **Revogação**: apagar o token em BookStack → Settings → API Tokens invalida
 imediatamente, independente do arquivo `.enc.yaml` no repo.
 
+## Chave da CA do Harbor
+
+`harbor-ca.enc.yaml` guarda `HARBOR_CA_KEY` (chave privada) e `HARBOR_CA_CRT` da CA `harbor-ca`
+que assina o certificado TLS do Harbor (ver `docs/runbook.md` P28). Só é necessária para
+**emitir um novo certificado de servidor** com a mesma CA; o dia a dia usa a CA pública em
+`kubernetes/cicd/harbor/harbor-ca.crt` e o SealedSecret `harbor-tls`. Não é materializada
+por `secrets-refresh.sh` — decriptar sob demanda com `sops -d secrets/harbor-ca.enc.yaml`.
+
 ## Ver também
 
 - `.sops.yaml` — configuração dos recipients (public keys)

@@ -27,11 +27,15 @@ expose:
     annotations:
       metallb.universe.tf/address-pool: "lab-pool"
   tls:
-    # Para o lab, usamos certresolver do cert-manager ou certificado self-signed
     enabled: true
-    certSource: auto    # auto gera self-signed; use "secret" para cert-manager
-    auto:
-      commonName: "harbor.lab.local"
+    # NUNCA voltar para "auto": o chart regenera a CA `harbor-ca` a cada `helm
+    # upgrade`, e os nós (containerd) e pipelines deixam de confiar no Harbor
+    # (incidente 2026-09-24, runbook P28). O certificado é estável: CA de 10 anos +
+    # folha de 825 dias, em SealedSecret (harbor-tls-sealedsecret.yaml); CA pública
+    # em harbor-ca.crt, chave da CA em secrets/harbor-ca.enc.yaml (SOPS).
+    certSource: secret
+    secret:
+      secretName: "harbor-tls"
 
 # Senha do admin Harbor
 harborAdminPassword: "Harbor12345!"

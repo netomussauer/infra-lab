@@ -10,10 +10,18 @@
 # `x509: certificate signed by unknown authority`.
 #
 # Solução (Opção B do amfit/infra/cluster/PENDING.md item 1.1):
-#   1. Extrair o CA do Harbor do secret `harbor-nginx` no namespace `registry`
+#   1. Ler o CA PÚBLICO estável do repo (kubernetes/cicd/harbor/harbor-ca.crt) —
+#      desde 2026-09-24 o Harbor usa certSource: secret com CA fixa (runbook P28);
+#      antes o CA era extraído do secret `harbor-nginx` e mudava a cada helm upgrade.
 #   2. Copiar para /usr/local/share/ca-certificates/harbor-ca.crt em cada nó
 #   3. Rodar `update-ca-certificates`
 #   4. Reiniciar k3s / k3s-agent para containerd recarregar o trust store
+#
+# Para atualizar nó a nó (recomendado — o restart do k3s afeta cada nó):
+#   ansible-playbook playbooks/07-k3s-registries.yml --limit k3s-worker-cicd
+# Sobrescrever StrictHostKeyChecking (o ansible.cfg do repo o desliga) com
+#   -e 'ansible_ssh_common_args="-o StrictHostKeyChecking=accept-new"'
+# se quiser manter a verificação de chave de host.
 #
 # Esta abordagem é mais correta que `insecure_skip_verify: true` em
 # registries.yaml (Opção A) — mantém a validação TLS, apenas adiciona o CA
@@ -25,39 +33,23 @@
 # Validar (em qualquer nó):
 #   sudo crictl pull harbor.lab.local/amfit/api:latest   # deve funcionar sem TLS error
 
-- name: Extrair CA do Harbor do secret harbor-nginx
-  hosts: k3s_server
-  become: false
-  gather_facts: false
-  tasks:
-    - name: Buscar ca.crt do secret harbor-nginx e decodificar
-      # jsonpath com chave que tem dot precisa de escape duplo no shell.
-      # Já decodifica aqui para evitar problemas com b64decode em YAML.
-      ansible.builtin.shell: >-
-        k3s kubectl get secret -n registry harbor-nginx
-        -o jsonpath='{.data.ca\.crt}' | base64 -d
-      args:
-        executable: /bin/bash
-      register: harbor_ca_extract
-      changed_when: false
-
-    - name: Expor CA como fact
-      ansible.builtin.set_fact:
-        harbor_ca_pem: "{{ harbor_ca_extract.stdout }}"
-
-    - name: Validar que o CA é válido (começa com BEGIN CERTIFICATE)
-      ansible.builtin.assert:
-        that:
-          - "'BEGIN CERTIFICATE' in harbor_ca_pem"
-          - "'END CERTIFICATE' in harbor_ca_pem"
-        fail_msg: "CA inválido extraído do secret harbor-nginx"
-
 - name: Instalar CA do Harbor em todos os nós K3s
   hosts: k3s_server:k3s_agents
   become: true
   gather_facts: true
   vars:
-    harbor_ca_pem: "{{ hostvars[groups['k3s_server'][0]].harbor_ca_pem }}"
+    # CA pública estável, versionada no repo (a chave fica em SOPS, fora daqui).
+    harbor_ca_pem: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../kubernetes/cicd/harbor/harbor-ca.crt') }}"
+  pre_tasks:
+    - name: Validar que o CA do repo é um certificado PEM com CN harbor-ca
+      ansible.builtin.assert:
+        that:
+          - "'BEGIN CERTIFICATE' in harbor_ca_pem"
+          - "'END CERTIFICATE' in harbor_ca_pem"
+        fail_msg: "kubernetes/cicd/harbor/harbor-ca.crt inválido"
+      delegate_to: localhost
+      become: false
+      run_once: true
 
   tasks:
     # ----------------------------------------------------------------
