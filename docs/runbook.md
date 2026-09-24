@@ -1189,7 +1189,7 @@ curl -sS -o /dev/null -w "%{http_code}\n" https://harbor.lab.local/v2/
 sudo crictl pull --creds "admin:Harbor12345!" harbor.lab.local/<projeto>/<app>:latest
 ```
 
-**Quando o CA do Harbor for rotacionado:** re-executar o playbook 07. Ele extrai a versão atual do CA do secret `harbor-nginx` e atualiza o trust store dos nós.
+**Quando o CA do Harbor for rotacionado:** re-executar o playbook 07, nó a nó (`--limit`). Desde 2026-09-24 ele instala a CA **estável do repo** (`kubernetes/cicd/harbor/harbor-ca.crt`), não mais extraída do Secret — ver P28. Antes disso o Harbor usava `certSource: auto`, que regenera a CA a cada `helm upgrade`.
 
 ### P24: Terraform — providers quebrados impedem `plan`/`apply`/`import` (pendente de correção)
 
@@ -1274,4 +1274,29 @@ kubectl patch application app-of-apps -n cicd --type merge \
 
 **Rollback / limpeza:** o PV antigo (`pvc-1cb5d066-6069-49d7-bdd0-8be0214ab724`, `Retain`/`Released`) e o dump em `~/harbor-backup/` foram mantidos. Depois de alguns dias estável: `kubectl delete pv pvc-1cb5d066-…` e remover `/var/lib/rancher/k3s/storage/pvc-1cb5d066-…` no `k3s-worker-cicd` (com `Retain`, apagar o PV não apaga o diretório). A RAM do worker do `pve2` **não foi aumentada**: o host tem só ~2 GB realmente livres (5,74 de 7,72 GB usados) e o banco usa ~70 MiB, então não compensou o risco.
 
-**Pendente:** os builds continuam gravando no disco do `k3s-worker-cicd` (blobs do registry incluídos) — confirmar a melhoria medindo `dmesg`/`iostat` durante um build real. Também: bancos/usuários de `amactive` e `training_hub` fora do initdb do Postgres compartilhado (ver `context/facts/shared-infra-databases.md`). Diagnóstico: `iostat -x 1 3`, `cat /proc/pressure/io`, `ethtool enp2s0 | grep Speed`, `sudo smartctl -H -A /dev/sda` (smartmontools não estava instalado).
+**Pendente:** os builds continuam gravando no disco do `k3s-worker-cicd` (blobs do registry incluídos) — confirmar a melhoria medindo `dmesg`/`iostat` durante um build real. Também: bancos/usuários de `amactive` e `training_hub` fora do initdb do Postgres compartilhado (ver `context/facts/shared-infra-databases.md`).
+
+> **Atenção (P28):** os `helm upgrade` deste procedimento, feitos com `certSource: auto`, regeneraram a CA do Harbor e quebraram o TLS dos nós. Corrigido em P28 (certificado estável); com `certSource: secret` um `helm upgrade` do Harbor não mexe mais na CA.
+
+### P28: Harbor — `x509: certificate signed by unknown authority` após `helm upgrade` (CA regenerada) (2026-09-24)
+
+**Sintoma:** depois de um `helm upgrade` do Harbor, `ImagePullBackOff` em pods com `imagePullPolicy: Always` (`x509: certificate signed by unknown authority (possibly because of "crypto/rsa: verification error" while trying to verify candidate authority certificate "harbor-ca")`), `curl` sem `-k` no nó dá erro de TLS, e pipelines Tekton quebram no push.
+
+**Causa (confirmada):** com `expose.tls.certSource: auto` o chart 1.19.2 **gera uma CA `harbor-ca` nova a cada `helm upgrade`** (não só na instalação). Os nós confiam numa cópia da CA instalada em `/usr/local/share/ca-certificates/harbor-ca.crt` (playbook 07), que fica obsoleta. Evidência: `helm history harbor -n registry` (revisões 4–6, todas em 24/09) e o certificado servido com `notBefore` = horário exato da última revisão; nós com CAs de 29/abr (ubuntu-neto) e 14/set (demais), nenhuma igual à servida. As revisões 2 (2/set) e 3 (14/set) já haviam regenerado a CA; o `ubuntu-neto`, `ci-runner` e `raspneto` nunca foram atualizados depois disso.
+
+**Correção durável aplicada em 2026-09-24:**
+
+1. CA `harbor-ca` (10 anos, `CN=harbor-ca, O=infra-lab`) e certificado do servidor (825 dias, SAN `harbor.lab.local` + `192.168.1.202`) **gerados do zero** com `openssl`. Chave da CA em `secrets/harbor-ca.enc.yaml` (SOPS; chaves `HARBOR_CA_KEY`/`HARBOR_CA_CRT`); CA pública em `kubernetes/cicd/harbor/harbor-ca.crt`; Secret `harbor-tls` (`tls.crt`, `tls.key`, `ca.crt`) selado em `kubernetes/cicd/harbor/harbor-tls-sealedsecret.yaml` (scope strict, namespace `registry`).
+2. `helm-values.yaml` do Harbor: `expose.tls.certSource: secret` + `secret.secretName: harbor-tls`. **Não voltar para `auto`.**
+3. Playbook `07-k3s-registries.yml` passou a instalar a CA do repo (não mais extraída do cluster). Rodado nos 6 nós, um de cada vez (`--limit`), com verificação de chave de host ligada — o `ansible.cfg` do repo desliga (`StrictHostKeyChecking=no`), então sobrescrever com `ANSIBLE_HOST_KEY_CHECKING=True` e `ANSIBLE_SSH_ARGS="-C -o ControlMaster=auto -o ControlPersist=60s -o StrictHostKeyChecking=accept-new"`. Ordem usada: `k3s-worker-cicd`, `k3s-worker-pve2`, `ci-runner`, `raspneto`, `k3s-server`, `ubuntu-neto` (cada um reinicia `k3s`/`k3s-agent`).
+4. Validação: `openssl s_client -CAfile kubernetes/cicd/harbor/harbor-ca.crt` → `Verification: OK`; nos 6 nós, fingerprint da CA `26:27:5C:77:…:90:8B:16` e `curl` sem `-k` → 401.
+
+**Renovar o certificado do servidor (825 dias, expira em ~dez/2028):** decriptar a chave da CA de `secrets/harbor-ca.enc.yaml` (`sops -d`), emitir novo `tls.crt`/`tls.key` com a mesma CA, refazer o SealedSecret e `kubectl apply`; **não há necessidade de tocar nos nós** enquanto a CA for a mesma. Trocar a CA exige rodar o playbook 07 nos 6 nós.
+
+**Pendências / observações:**
+
+- **Inventário Ansible corrigido em 2026-09-24:** `notebook-i5` (`192.168.1.65`) virou `ubuntu-neto` (`192.168.1.67`) e `raspberry-pi` virou `raspneto`, para bater com os nomes/IPs reais dos nós (os playbooks usam `{{ inventory_hostname }}` em `kubectl get/label node` — com os nomes antigos o `05-post-setup` nunca rotulava esses dois nós). Ainda com o nome/IP antigo, fora do inventário: registro `ubuntu-neto.lab.local -> 192.168.1.65` no Pi-hole (`kubernetes/network-services/pihole/configmap-records.yaml`), IP `192.168.1.65` em `terraform/proxmox/netbox.tf` e os devices `notebook-i5`/`raspberry-pi` de `00-netbox-register.yml`, além de `scripts/bootstrap.sh`, `scripts/init-baremetal.sh` e `scripts/k8s-bootstrap.sh` (comentários/menus). Não alterados: mexer no Pi-hole reinicia o DNS da LAN e NetBox/Terraform mudariam dados vivos.
+- O `ansible.cfg` mantém `StrictHostKeyChecking=no` e `group_vars/all.yml` usa `UserKnownHostsFile=/dev/null` — decisão antiga, não alterada aqui.
+- A task kaniko compartilhada (`kubernetes/cicd/tekton/pipeline-build-push.yaml`) usa `--skip-tls-verify`; o `amactive` usa `--skip-tls-verify-registry`. Não foi alterado.
+- O erro `stopped after 10 redirects` no `/service/token` (visto em 15–17/set, antes deste incidente) é uma causa separada e **continua sem diagnóstico**.
+- `helm-values.yaml` do Harbor ainda contém `harborAdminPassword` e `secretKey` em texto puro no repo (pré-existente). Diagnóstico: `iostat -x 1 3`, `cat /proc/pressure/io`, `ethtool enp2s0 | grep Speed`, `sudo smartctl -H -A /dev/sda` (smartmontools não estava instalado).
