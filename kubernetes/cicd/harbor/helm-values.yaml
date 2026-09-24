@@ -259,8 +259,12 @@ database:
       limits:
         cpu: "750m"
         memory: "1Gi"
+    # Movido do k3s-worker-cicd para o worker do pve2 (SSD) em 2026-09-24: os
+    # builds kaniko saturam o disco do nó cicd e derrubavam o banco (P27). O
+    # PVC local-path nasce no nó onde o pod é agendado; blobs das imagens
+    # continuam no PVC harbor-registry, no nó cicd.
     nodeSelector:
-      workload: "cicd"
+      kubernetes.io/hostname: "k3s-worker-pve2"
     # 16 restarts (exit 137) em 9 dias: o healthcheck (`/docker-healthcheck.sh`)
     # com timeout de 1s falha quando o disco do k3s-worker-cicd satura (builds
     # kaniko no mesmo nó); o kubelet mata o Postgres, que leva > 1 min para
