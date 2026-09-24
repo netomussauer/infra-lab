@@ -133,21 +133,27 @@ core:
       memory: "512Mi"
   nodeSelector:
     workload: "cicd"
+  # timeoutSeconds explícito (padrão do chart = 1s): sob IO saturado no
+  # k3s-worker-cicd o healthcheck estourava e o kubelet derrubava o core.
+  # Ver docs/runbook.md P26/P27.
   livenessProbe:
     enabled: true
     initialDelaySeconds: 60
     periodSeconds: 10
-    failureThreshold: 3
+    timeoutSeconds: 5
+    failureThreshold: 6
     successThreshold: 1
   readinessProbe:
     enabled: true
     initialDelaySeconds: 20
     periodSeconds: 10
-    failureThreshold: 3
+    timeoutSeconds: 5
+    failureThreshold: 6
     successThreshold: 1
   startupProbe:
     enabled: true
     initialDelaySeconds: 10
+    timeoutSeconds: 5
     failureThreshold: 30
     periodSeconds: 10
 
@@ -255,6 +261,24 @@ database:
         memory: "1Gi"
     nodeSelector:
       workload: "cicd"
+    # 16 restarts (exit 137) em 9 dias: o healthcheck (`/docker-healthcheck.sh`)
+    # com timeout de 1s falha quando o disco do k3s-worker-cicd satura (builds
+    # kaniko no mesmo nó); o kubelet mata o Postgres, que leva > 1 min para
+    # desligar ("the database system is shutting down") e acaba com SIGKILL —
+    # e o token service do Harbor fica fora, quebrando o push (401/redirects).
+    # 6 falhas x 10s com timeout de 10s tolera um engasgo de IO sem matar o banco.
+    livenessProbe:
+      initialDelaySeconds: 300
+      periodSeconds: 10
+      timeoutSeconds: 10
+      failureThreshold: 6
+      successThreshold: 1
+    readinessProbe:
+      initialDelaySeconds: 1
+      periodSeconds: 10
+      timeoutSeconds: 10
+      failureThreshold: 6
+      successThreshold: 1
 
 redis:
   type: internal
@@ -268,6 +292,18 @@ redis:
         memory: "128Mi"
     nodeSelector:
       workload: "cicd"
+    livenessProbe:
+      initialDelaySeconds: 300
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 6
+      successThreshold: 1
+    readinessProbe:
+      initialDelaySeconds: 1
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 6
+      successThreshold: 1
 
 # Labels globais aplicadas a todos os recursos
 commonLabels:
