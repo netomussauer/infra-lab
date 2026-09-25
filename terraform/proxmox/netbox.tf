@@ -123,7 +123,7 @@ resource "netbox_ip_address" "ci_runner" {
 resource "netbox_ip_address" "k3s_worker_pve2" {
   ip_address  = "192.168.1.33/24"
   status      = "active"
-  description = "k3s-worker-pve2"
+  description = "k3s-worker-pve2 (VM 203 @ pve2, K3s worker, workload=general)"
 
   depends_on = [netbox_prefix.management]
 }
@@ -143,11 +143,25 @@ resource "netbox_ip_address" "proxmox_host" {
   depends_on = [netbox_prefix.management]
 }
 
-# Notebook i5 — nó worker bare metal para workloads de monitoring
-resource "netbox_ip_address" "notebook_i5" {
+# ubuntu-neto — nó worker bare metal (notebook) para workloads de monitoring.
+# Antes chamado notebook-i5 e em 192.168.1.65; o IP mudou para .67 após o crash
+# de 2026-06 (o .65 hoje é do CT homepage, abaixo). Runbook P31.
+resource "netbox_ip_address" "ubuntu_neto" {
+  ip_address  = "192.168.1.67/24"
+  status      = "active"
+  dns_name    = "ubuntu-neto.lab.local"
+  description = "ubuntu-neto (K3s worker bare-metal, workload=monitoring; antes 192.168.1.65)"
+
+  depends_on = [netbox_prefix.management]
+}
+
+# homepage — CT 105 no Proxmox (virt), dashboard :3000. IP fixado estático em
+# 2026-09-25 (era DHCP); herdou o .65 que era do notebook-i5/ubuntu-neto.
+resource "netbox_ip_address" "homepage" {
   ip_address  = "192.168.1.65/24"
   status      = "active"
-  description = "notebook-i5 (k3s monitoring worker)"
+  dns_name    = "homepage.lab.local"
+  description = "homepage (CT 105 @ virt, dashboard :3000, IP estático desde 2026-09-25; antes DHCP — IP era do notebook-i5/ubuntu-neto até o crash de 2026-06)"
 
   depends_on = [netbox_prefix.management]
 }
@@ -170,20 +184,23 @@ resource "netbox_ip_address" "nas" {
   depends_on = [netbox_prefix.management]
 }
 
-# VM do NetBox IPAM — o próprio serviço que estamos configurando
+# NetBox IPAM — CT 100 no pve2, o próprio serviço que estamos configurando
 resource "netbox_ip_address" "netbox_vm" {
   ip_address  = "192.168.1.72/24"
   status      = "active"
-  description = "NetBox IPAM VM"
+  dns_name    = "netbox.lab.local"
+  description = "NetBox IPAM (CT 100 @ pve2, IP fixo .72 após conflito em .70 com Nokia)"
 
   depends_on = [netbox_prefix.management]
 }
 
-# BookStack — wiki / documentação interna do laboratório
+# BookStack — wiki / documentação interna do laboratório (CT 106 no pve2).
+# IP estático desde 2026-09-24; era DHCP e o registro apontava .76 (runbook P29).
 resource "netbox_ip_address" "bookstack" {
   ip_address  = "192.168.1.64/24"
   status      = "active"
-  description = "BookStack (wiki interna do lab)"
+  dns_name    = "bookstack.lab.local"
+  description = "BookStack (CT 106 @ pve2, IP estático desde 2026-09-24; era DHCP e o registro apontava .76)"
 
   depends_on = [netbox_prefix.management]
 }
@@ -203,40 +220,141 @@ resource "netbox_ip_address" "homeassistant" {
 # IPs estáticos atribuídos pelo MetalLB a cada serviço Kubernetes exposto.
 # Devem estar fora do pool DHCP do roteador doméstico.
 
+# NOTA (2026-09-25, runbook P31): os registros abaixo estavam deslocados em 1
+# (.200 "Gitea", .201 "Harbor", .202 "ArgoCD", .203 "Tekton"); o real é .201
+# Gitea, .202 Harbor, .203 ArgoCD, .204 Tekton EL, e o .200 está livre. Máscaras
+# espelham o NetBox: /27 nos registros antigos (.200-.203, .210, .212-.213) e /24
+# nos criados em 2026-09-25 (.204-.209, .211) — inconsistência pré-existente; a
+# máscara correta da LAN é /24.
+
+# .200 — livre no pool lab-pool (sem serviço)
+resource "netbox_ip_address" "lb_pool_livre" {
+  ip_address  = "192.168.1.200/27"
+  status      = "reserved"
+  description = "MetalLB lab-pool — livre (sem serviço; o registro anterior 'Gitea' estava deslocado em 1)"
+
+  depends_on = [netbox_prefix.metallb_pool]
+}
+
 # IP do serviço LoadBalancer do Gitea (Git server auto-hospedado)
 resource "netbox_ip_address" "lb_gitea" {
-  ip_address  = "192.168.1.200/27"
+  ip_address  = "192.168.1.201/27"
   status      = "active"
-  description = "MetalLB — Gitea"
+  dns_name    = "gitea.lab.local"
+  description = "MetalLB — Gitea (gitea-http)"
 
   depends_on = [netbox_prefix.metallb_pool]
 }
 
 # IP do serviço LoadBalancer do Harbor (registry de imagens OCI)
 resource "netbox_ip_address" "lb_harbor" {
-  ip_address  = "192.168.1.201/27"
+  ip_address  = "192.168.1.202/27"
   status      = "active"
-  description = "MetalLB — Harbor"
+  dns_name    = "harbor.lab.local"
+  description = "MetalLB — Harbor (HTTPS 443; porta 80 não exposta desde 2026-09-25)"
 
   depends_on = [netbox_prefix.metallb_pool]
 }
 
 # IP do serviço LoadBalancer do ArgoCD (GitOps / CD)
 resource "netbox_ip_address" "lb_argocd" {
-  ip_address  = "192.168.1.202/27"
+  ip_address  = "192.168.1.203/27"
   status      = "active"
-  description = "MetalLB — ArgoCD"
+  dns_name    = "argocd.lab.local"
+  description = "MetalLB — ArgoCD (argocd-server)"
 
   depends_on = [netbox_prefix.metallb_pool]
 }
 
 # IP do serviço LoadBalancer do Tekton EventListener (gatilhos de pipeline)
 resource "netbox_ip_address" "lb_tekton" {
-  ip_address  = "192.168.1.203/27"
+  ip_address  = "192.168.1.204/24"
   status      = "active"
-  description = "MetalLB — Tekton EventListener"
+  dns_name    = "tekton.lab.local"
+  description = "MetalLB — Tekton EventListener (gitea-event-listener-lb)"
 
   depends_on = [netbox_prefix.metallb_pool]
+}
+
+# Serviços dos projetos (LoadBalancers MetalLB)
+resource "netbox_ip_address" "lb_amfit_api" {
+  ip_address  = "192.168.1.205/24"
+  status      = "active"
+  dns_name    = "api.amfit.local"
+  description = "MetalLB — amfit-api"
+
+  depends_on = [netbox_prefix.metallb_pool]
+}
+
+resource "netbox_ip_address" "lb_amfit_web" {
+  ip_address  = "192.168.1.206/24"
+  status      = "active"
+  dns_name    = "app.amfit.local"
+  description = "MetalLB — amfit-web"
+
+  depends_on = [netbox_prefix.metallb_pool]
+}
+
+resource "netbox_ip_address" "lb_amfit_minio" {
+  ip_address  = "192.168.1.207/24"
+  status      = "active"
+  dns_name    = "minio.amfit.local"
+  description = "MetalLB — amfit minio"
+
+  depends_on = [netbox_prefix.metallb_pool]
+}
+
+resource "netbox_ip_address" "lb_realtpmsys_api" {
+  ip_address  = "192.168.1.208/24"
+  status      = "active"
+  dns_name    = "api.realtpmsys.local"
+  description = "MetalLB — realtpmsys-api"
+
+  depends_on = [netbox_prefix.metallb_pool]
+}
+
+resource "netbox_ip_address" "lb_open_webui" {
+  ip_address  = "192.168.1.209/24"
+  status      = "active"
+  dns_name    = "chat.lab.local"
+  description = "MetalLB — open-webui (ai)"
+
+  depends_on = [netbox_prefix.metallb_pool]
+}
+
+resource "netbox_ip_address" "lb_realtpmsys_web" {
+  ip_address  = "192.168.1.211/24"
+  status      = "active"
+  dns_name    = "app.realtpmsys.local"
+  description = "MetalLB — realtpmsys-web"
+
+  depends_on = [netbox_prefix.metallb_pool]
+}
+
+resource "netbox_ip_address" "lb_amactive_api" {
+  ip_address  = "192.168.1.212/27"
+  status      = "active"
+  description = "MetalLB — AMACTIVE API"
+
+  depends_on = [netbox_prefix.metallb_pool]
+}
+
+resource "netbox_ip_address" "lb_amactive_web" {
+  ip_address  = "192.168.1.213/27"
+  status      = "active"
+  description = "MetalLB — AMACTIVE Web"
+
+  depends_on = [netbox_prefix.metallb_pool]
+}
+
+# Pi-hole — DNS da LAN (pool infra-services-pool 192.168.1.50-59)
+resource "netbox_ip_address" "pihole" {
+  ip_address  = "192.168.1.53/24"
+  status      = "active"
+  dns_name    = "pihole.lab.local"
+  description = "MetalLB infra-pool — Pi-hole (DNS da LAN)"
+
+  depends_on = [netbox_prefix.management]
 }
 
 # IP do serviço LoadBalancer do Grafana (observabilidade / dashboards)

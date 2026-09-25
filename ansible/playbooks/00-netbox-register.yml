@@ -2,7 +2,7 @@
 # Playbook: Registrar hosts físicos do lab no NetBox IPAM
 #
 # Registra no NetBox os equipamentos bare-metal que o Terraform não gerencia
-# diretamente: notebook-i5 (worker monitoring), raspberry-pi (worker edge) e NAS.
+# diretamente: ubuntu-neto (worker monitoring), raspneto (worker edge) e NAS.
 # Os objetos VirtualMachine das VMs Proxmox são criados pelo próprio Terraform
 # (terraform/proxmox/netbox.tf), portanto não são duplicados aqui.
 #
@@ -168,12 +168,12 @@
     # Devices físicos — hosts bare metal do laboratório
     # -------------------------------------------------------------------------
 
-    # Notebook i5 — worker K3s para workloads de monitoring
-    - name: Registrar notebook-i5 como device no NetBox
+    # ubuntu-neto (notebook, antes notebook-i5) — worker K3s para workloads de monitoring
+    - name: Registrar ubuntu-neto como device no NetBox
       netbox.netbox.netbox_device:
         <<: *netbox_common
         data:
-          name:   notebook-i5
+          name:   ubuntu-neto
           device_type:
             model: "Intel i5-2450M"
           role:   k8s-worker
@@ -186,12 +186,12 @@
         state: present
       tags: [netbox, device, bare-metal]
 
-    # Raspberry Pi — worker K3s para workloads de edge (ARMv7)
-    - name: Registrar raspberry-pi como device no NetBox
+    # raspneto (Raspberry Pi, antes raspberry-pi) — worker K3s para workloads de edge (ARMv7)
+    - name: Registrar raspneto como device no NetBox
       netbox.netbox.netbox_device:
         <<: *netbox_common
         data:
-          name:   raspberry-pi
+          name:   raspneto
           device_type:
             model: "Raspberry Pi ARMv7"
           role:   k8s-edge
@@ -226,21 +226,22 @@
     # Os IPs das VMs são gerenciados pelo Terraform (netbox.tf).
     # Aqui registramos apenas os IPs dos equipamentos bare metal.
 
-    - name: Registrar IP do notebook-i5 no NetBox
+    - name: Registrar IP do ubuntu-neto no NetBox
       netbox.netbox.netbox_ip_address:
         <<: *netbox_common
         data:
-          address:     "192.168.1.65/24"
+          address:     "192.168.1.67/24"
           status:      active
-          description: "notebook-i5 (k3s monitoring worker)"
+          dns_name:    "ubuntu-neto.lab.local"
+          description: "ubuntu-neto (K3s worker bare-metal, workload=monitoring; antes 192.168.1.65)"
           assigned_object:
-            name:        notebook-i5
+            name:        ubuntu-neto
             object_type: dcim.device
         state: present
-      register: ip_notebook_i5
+      register: ip_ubuntu_neto
       tags: [netbox, ip]
 
-    - name: Registrar IP do raspberry-pi no NetBox
+    - name: Registrar IP do raspneto no NetBox
       netbox.netbox.netbox_ip_address:
         <<: *netbox_common
         data:
@@ -248,10 +249,10 @@
           status:      active
           description: "raspberry-pi (k3s edge worker, ARMv7)"
           assigned_object:
-            name:        raspberry-pi
+            name:        raspneto
             object_type: dcim.device
         state: present
-      register: ip_raspberry
+      register: ip_raspneto
       tags: [netbox, ip]
 
     - name: Registrar IP do NAS no NetBox

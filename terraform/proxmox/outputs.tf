@@ -47,8 +47,9 @@ output "cluster_summary" {
     agents = [
       "k3s-worker-cicd @ ${netbox_ip_address.k3s_worker_cicd.ip_address}",
       "ci-runner        @ ${netbox_ip_address.ci_runner.ip_address}",
-      "notebook-i5      @ 192.168.1.65 (bare metal — não gerenciado pelo Terraform)",
-      "raspberry-pi     @ 192.168.1.110 (bare metal — não gerenciado pelo Terraform)",
+      "k3s-worker-pve2  @ ${netbox_ip_address.k3s_worker_pve2.ip_address}",
+      "ubuntu-neto      @ ${netbox_ip_address.ubuntu_neto.ip_address} (bare metal — não gerenciado pelo Terraform)",
+      "raspneto         @ 192.168.1.110 (bare metal — não gerenciado pelo Terraform)",
     ]
   }
 }
