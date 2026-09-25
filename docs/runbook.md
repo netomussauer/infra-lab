@@ -1309,7 +1309,7 @@ kubectl patch application app-of-apps -n cicd --type merge \
 
 **Correção aplicada em 2026-09-24:** `net0` do CT 106 trocado para IP estático preservando o MAC (`name=eth0,bridge=vmbr0,gw=192.168.1.254,hwaddr=BC:24:11:8D:3A:DF,ip=192.168.1.64/24,type=veth`) e `nameserver: 192.168.1.254 1.1.1.1` (o DNS vinha do DHCP; sem isso o CT herdaria o `127.0.0.1` do host). A mudança de rede de um LXC só vale após `POST /nodes/pve2/lxc/106/status/reboot` (~25 s até o `/login` responder). Repo: `.76` → `.64` em todos os arquivos; registros `bookstack.lab.local` (`.64`) e `pve2.lab.local` (`.21`) adicionados ao ConfigMap do Pi-hole (restart do Pi-hole, janela de DNS de ~25 s, 9 consultas de 1/s falharam).
 
-**Pendente:** o `netbox_ip_address` do BookStack em `terraform/proxmox/netbox.tf` foi editado para `.64`, mas o **registro real no NetBox** provavelmente ainda diz `.76` (Terraform sem state/providers quebrados, P24) — atualizar à mão. Como o `netbox` CT (100) também foi migrado no mesmo dia, vale conferir o IP dele (`192.168.1.72` respondeu certo no DNS). Lição para migrações de CT: conferir `interfaces` do guest e fixar IP estático antes de migrar.
+**NetBox:** o registro real do BookStack (`.76`) foi corrigido para `.64` em 2026-09-25 (ver P31); o `netbox_ip_address` em `terraform/proxmox/netbox.tf` já estava com `.64`. O IP do CT `netbox` (100), migrado no mesmo dia, estava certo (`192.168.1.72`, estático), só a descrição dizia "@ virt". Lição para migrações de CT: conferir `interfaces` do guest e fixar IP estático antes de migrar.
 
 ### P30: Harbor — `stopped after 10 redirects` no `/service/token` durante o push do kaniko (2026-09-25)
 
@@ -1332,3 +1332,15 @@ kubectl patch application app-of-apps -n cicd --type merge \
 **Observação de processo:** o passo "há build em andamento?" do script de upgrade usou `kubectl … | wc -l`; com a API inacessível (`no route to host` a partir do PC do dono) a contagem saiu `0` por engano e o upgrade rodou sem a checagem real. Verificação posterior confirmou que nenhum PipelineRun estava ativo. Em scripts, tratar falha do `kubectl` como erro, não como zero.
 
 **Pendente:** `docs/CREDENTIALS.local.md` (arquivo local, fora do git) e o README do `amfit` (`amfit/infra/tekton/README.md`, exemplo de `curl` para a API do Harbor) ainda citam `http://harbor…`.
+
+### P31: NetBox IPAM desatualizado — IPs deslocados, ausentes e descrições velhas (2026-09-25)
+
+**Sintoma/achado:** auditoria dos IPs de `192.168.1.0/24` no NetBox contra o cluster, os CTs (API do Proxmox) e os LoadBalancers do MetalLB. Divergências: (1) BookStack registrado em `.76` (sem host) e nada em `.64`, o IP real (P29); (2) registros do MetalLB **deslocados em 1** — `.200` "Gitea", `.201` "Harbor", `.202` "ArgoCD", `.203` "Tekton EL", quando o real é `.201` Gitea, `.202` Harbor, `.203` ArgoCD, `.204` Tekton EL e `.200` livre; (3) `.65` ainda como `notebook-i5`, mas hoje é do **CT 105 `homepage`** (DHCP) e o `ubuntu-neto` está em `.67`, sem registro; (4) descrições velhas: CT `netbox` "@ virt" (é `pve2`), `immich` "CT 102" (é o CT 103); (5) sem registro: `.33` (`k3s-worker-pve2`), `.53` (Pi-hole), `.67`, `.204`–`.209`, `.211`.
+
+**Correção aplicada em 2026-09-25 (API, credencial admin do NetBox):** 8 atualizações e 10 criações, todas listadas por `--dry-run` antes de aplicar; resultado 18 ok / 0 erro. `.76` foi **re-endereçado** para `.64` (mantém o histórico do objeto); `.200` passou a `reserved`; `dns_name` preenchido onde há registro no Pi-hole. **Backup do estado anterior:** `~/netbox-backup/ips-192.168.1.0-24-<data>.json` (WSL, modo 600, fora do repo). Re-auditoria com o token somente-leitura do agente confere com a realidade.
+
+**Como reauditar:** listar `ipam/ip-addresses/?parent=192.168.1.0/24` e cruzar com `kubectl get nodes/svc`, `GET /nodes/<node>/lxc/<id>/interfaces` (Proxmox) e o ConfigMap do Pi-hole.
+
+**Drift conhecido (não alterado):** o Terraform (`terraform/proxmox/netbox.tf`) e o playbook `00-netbox-register.yml` ainda declaram `notebook-i5`/`raspberry-pi` em `192.168.1.65` e não conhecem os registros criados aqui; como o Terraform não tem state e os providers estão quebrados (P24), o NetBox foi corrigido pela API e o código de IaC ficou defasado — reconciliar quando o P24 for resolvido, senão um `apply` recriaria os registros antigos. Sobram no NetBox IPs `Auto-discovered` (`.75`, `.97`, `.101`–`.103`, `.254`, `dns_name` `unknown`) do `netbox-sync-lab-ips.sh`, `.84` (ollama, `dhcp`, CT parado) e `.107` (HomeAssistant, não verificado).
+
+**Pendente:** o CT 105 `homepage` (no `virt`) está em **DHCP com o IP antigo do ubuntu-neto** (`.65`) — fixar IP estático como no BookStack (P29); os CTs `ollama` (parado) e `omniroute` também são DHCP.
