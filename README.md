@@ -252,7 +252,7 @@ export KUBECONFIG=~/.kube/infra-lab.yaml
 | --- | --- |
 | Pi-hole | `http://192.168.1.53/admin` (ou `http://pihole.lab.local/admin`) |
 | Gitea | `http://192.168.1.201:3000` (ou `http://gitea.lab.local:3000`) |
-| Harbor | `http://192.168.1.202` (ou `http://harbor.lab.local`) |
+| Harbor | `https://harbor.lab.local` (ou `https://192.168.1.202`) — porta 80 não exposta (runbook P30) |
 | ArgoCD | `http://192.168.1.203` (ou `http://argocd.lab.local`) |
 | Tekton Dashboard | `http://192.168.1.204` (ou `http://tekton.lab.local`) |
 | Open WebUI | `http://192.168.1.209` (ou `http://chat.lab.local`) |

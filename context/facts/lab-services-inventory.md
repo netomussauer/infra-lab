@@ -11,7 +11,7 @@ Endpoints LoadBalancer ativos no lab (MetalLB pool 192.168.1.200-220 e 50-59):
 |---|---|---|
 | Pi-hole (DNS interno + filtro) | http://192.168.1.53 | pihole |
 | Gitea | http://192.168.1.201 | gitea |
-| Harbor (registry) | http://192.168.1.202 | harbor |
+| Harbor (registry) | https://harbor.lab.local (porta 80 não exposta desde 2026-09-25) | harbor |
 | ArgoCD | http://192.168.1.203 | argocd |
 | Tekton EventListener | http://192.168.1.204 | tekton |
 | amfit API / Web / MinIO | 205 / 206 / 207 | api.amfit / app.amfit / minio.amfit |

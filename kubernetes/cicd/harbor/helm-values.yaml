@@ -11,7 +11,7 @@
 #     --namespace registry --create-namespace
 #
 # IP MetalLB alocado: 192.168.1.202
-# Acesso: https://harbor.lab.local ou http://192.168.1.202
+# Acesso: https://harbor.lab.local (ou https://192.168.1.202) — a porta 80 não é exposta (runbook P30)
 # Credenciais padrão: admin / Harbor12345! (alterar no primeiro login)
 
 externalURL: "https://harbor.lab.local"
@@ -22,7 +22,12 @@ expose:
   loadBalancer:
     IP: "192.168.1.202"
     ports:
-      httpPort: 80
+      # A porta 80 do LB NAO e mais exposta (httpPort: 8081): o kaniko/go-containerregistry
+      # trata *.local como possivelmente HTTP e dispara uma sonda HTTP:80 em paralelo
+      # a HTTPS; quando ela ganha a corrida (HTTPS lento) o esquema "http" e gravado, o
+      # /service/token vira 301 em loop e o push falha com "stopped after 10 redirects".
+      # Sem nada ouvindo na 80 a sonda HTTP falha na hora. Ver docs/runbook.md P30.
+      httpPort: 8081
       httpsPort: 443
     annotations:
       metallb.universe.tf/address-pool: "lab-pool"
