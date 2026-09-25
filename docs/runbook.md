@@ -1331,7 +1331,7 @@ kubectl patch application app-of-apps -n cicd --type merge \
 
 **Observação de processo:** o passo "há build em andamento?" do script de upgrade usou `kubectl … | wc -l`; com a API inacessível (`no route to host` a partir do PC do dono) a contagem saiu `0` por engano e o upgrade rodou sem a checagem real. Verificação posterior confirmou que nenhum PipelineRun estava ativo. Em scripts, tratar falha do `kubectl` como erro, não como zero.
 
-**Pendente:** `docs/CREDENTIALS.local.md` (arquivo local, fora do git) e o README do `amfit` (`amfit/infra/tekton/README.md`, exemplo de `curl` para a API do Harbor) ainda citam `http://harbor…`.
+**Referências a `http://harbor…` corrigidas em 2026-09-25:** `docs/CREDENTIALS.local.md` (arquivo local, fora do git — só o texto da URL foi trocado por `https://harbor.lab.local`) e o exemplo de `curl` para a API do Harbor em `amfit/infra/tekton/README.md` (agora `https://…` com `--cacert` apontando para a CA versionada; nunca `-k`). Busca em `infra-lab`, `amfit`, `amactive`, `realtpmsys` e `training-performance-hub` (sem `node_modules`) não achou mais nenhuma referência ativa.
 
 ### P31: NetBox IPAM desatualizado — IPs deslocados, ausentes e descrições velhas (2026-09-25)
 
