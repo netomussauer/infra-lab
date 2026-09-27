@@ -17,7 +17,7 @@ terraform {
     # Fixado em ~> 5.3.0 para evitar upgrades não testados.
     netbox = {
       source  = "e-breuninger/netbox"
-      version = "~> 5.3.0"
+      version = "~> 5.3"
     }
   }
 }
