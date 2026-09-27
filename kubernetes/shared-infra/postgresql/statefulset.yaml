@@ -70,6 +70,11 @@ spec:
                 secretKeyRef:
                   name: postgresql-secret
                   key: AMFIT_PASSWORD
+            - name: AMACTIVE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-secret
+                  key: AMACTIVE_PASSWORD
 
           resources:
             requests:

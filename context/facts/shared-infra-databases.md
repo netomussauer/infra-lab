@@ -16,17 +16,26 @@ Sob saturação de IO as sondas `exec` estouravam; desde 2026-09-24 têm
 - Service: `postgresql.shared-infra.svc.cluster.local:5432` (ClusterIP).
 - 10Gi PVC `local-path`. Requests: 250m CPU / 256Mi RAM.
 - Databases criados pelo initdb (`kubernetes/shared-infra/postgresql/configmap.yaml`):
-  `realtpmsys` (owner `realtpmsys`), `amfit` (owner `amfit`) — ambos com
-  `REVOKE ALL ON SCHEMA public FROM PUBLIC` (schema restrito ao owner).
-- **Drift (registrado em 2026-09-24):** os projetos `amactive` e
-  `training-performance-hub` também usam este Postgres, mas seus bancos/usuários
-  **não estão no initdb** — foram criados manualmente e só existem no PVC.
-  `training-performance-hub` usa `user=training_hub`/`database=training_hub`
-  (visto no log do backend); `amactive` recebe a conexão via `DATABASE_URL`
-  em Secret (nome do banco/usuário não verificado — Secret não foi lido). Se o
-  PVC `data-postgresql-0` for perdido ou recriado, esses bancos somem e o initdb
-  não os recria. Pendente: incluí-los no initdb (com senhas vindas de Secret,
-  como `AMFIT_PASSWORD`) e/ou documentar backup/restauração.
+  `realtpmsys` (owner `realtpmsys`), `amfit` (owner `amfit`), e desde
+  2026-09-27 também `amactive` (owner `amactive`, senha em
+  `AMACTIVE_PASSWORD` no Secret `postgresql-secret`) — todos com
+  `REVOKE ALL ON SCHEMA public FROM PUBLIC` (schema restrito ao owner). A
+  senha de `AMACTIVE_PASSWORD` foi gerada do zero nesse reconcile e **não é**
+  a senha em uso pelo banco `amactive` ao vivo hoje — o script de initdb só
+  roda em data dir vazio, então isso só produz efeito se o PVC
+  `data-postgresql-0` for perdido e recriado; nesse cenário, atualize também
+  o Secret do app `amactive` para casar com essa senha. Ver P32 no runbook.
+- **Drift ainda pendente (registrado em 2026-09-24, `training_hub` mantido
+  fora do initdb deliberadamente):** `training-performance-hub` também usa
+  este Postgres (`user=training_hub`/`database=training_hub`, visto no log
+  do backend), mas seu banco/usuário **não está no initdb automático** —
+  existe um script `training-performance-hub-provisioning.template.sql`
+  nesse mesmo diretório, marcado explicitamente como execução manual única
+  por um administrador autorizado, e não foi incorporado ao initdb porque
+  `training-performance-hub` ainda está em desenvolvimento e mudanças nesse
+  projeto ficam a cargo do próprio dono (ver runbook). Se o PVC
+  `data-postgresql-0` for perdido, esse banco não é recriado automaticamente
+  — seria necessário rodar o template manualmente de novo.
 - Credenciais em Secret `postgresql-secret`.
 - Clientes que saem com erro se o banco cair no startup (sem retry) entram em
   crashloop enquanto o Postgres reinicia — ex.: backend do

@@ -24,6 +24,12 @@ data:
       -- amfit
       CREATE USER amfit WITH PASSWORD '${AMFIT_PASSWORD}';
       CREATE DATABASE amfit OWNER amfit;
+
+      -- amactive (adicionado em 2026-09-27 para reconciliar drift: o banco
+      -- e o usuario ja existiam no PVC, criados manualmente, mas nao
+      -- estavam neste initdb — ver P32 no runbook)
+      CREATE USER amactive WITH PASSWORD '${AMACTIVE_PASSWORD}';
+      CREATE DATABASE amactive OWNER amactive;
     EOSQL
 
     # Revoke public schema access for realtpmsys database
@@ -36,4 +42,10 @@ data:
     psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "amfit" <<-EOSQL
       REVOKE ALL ON SCHEMA public FROM PUBLIC;
       GRANT ALL ON SCHEMA public TO amfit;
+    EOSQL
+
+    # Revoke public schema access for amactive database
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "amactive" <<-EOSQL
+      REVOKE ALL ON SCHEMA public FROM PUBLIC;
+      GRANT ALL ON SCHEMA public TO amactive;
     EOSQL
