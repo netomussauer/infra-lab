@@ -26,6 +26,7 @@ Cada ADR documenta uma decisão de design tomada neste projeto: o contexto que l
 | [ADR-012](#adr-012) | Credenciais de escopo reduzido para agentes de IA (vs. reuso das credenciais admin, vs. HashiCorp Vault) | Aceito |
 | [ADR-013](#adr-013) | Cloudflare Tunnel + ingress-nginx interno para expor endpoints públicos (vs. port-forward direto, vs. VPS reverse proxy, vs. Tailscale Funnel) | Aceito |
 | [ADR-014](#adr-014) | Descontinuar infra-lab-proxmox e migrar bookstack-sync/netbox-scripts para infra-lab | Aceito |
+| [ADR-015](#adr-015) | Nuvem pública para ambiente produtivo (AWS como padrão) + conectividade lab↔cloud via mesh outbound-only | Aceito (referência — nenhum projeto migrado ainda) |
 
 ---
 
@@ -632,3 +633,109 @@ Uma auditoria de conteúdo do `infra-lab-proxmox` (46 arquivos versionados) enco
 - `scripts/bookstack-sync/sync.py` só funciona depois que `secrets/env.bookstack.enc.yaml` for criado com um token novo, gerado em BookStack → Settings → API Tokens — não há sincronização automática configurada por padrão ainda.
 - `scripts/netbox-sync-lab-ips.sh` foi adaptado para a rede real, mas seu uso continua opcional — o `infra-lab` já cobre alocação de IP via Terraform/NetBox provider sem depender de descoberta ativa por scan de rede.
 - `infra-lab-proxmox` arquivado continua acessível (read-only) para qualquer consulta futura ao design original, mas não recebe mais commits.
+
+---
+
+## ADR-015
+
+**Título:** Nuvem pública para ambiente produtivo (AWS como padrão) + conectividade lab↔cloud via mesh outbound-only
+
+**Status:** Aceito (referência — nenhum projeto migrado ainda; decisão tomada preventivamente para não ser re-discutida projeto a projeto)
+
+**Contexto:**
+
+Este lab hospeda hoje quatro projetos em desenvolvimento (`amfit`, `amactive`, `realtpmsys`,
+`training-performance-hub`), todos com o mesmo caminho previsível pela frente: em algum
+momento vão precisar de um ambiente produtivo real, servindo dado de terceiros. O lab, por
+natureza, não deve ser esse ambiente — é hardware doméstico (notebooks i5/i7 de 2011-2012,
+Raspberry Pi, dois hosts Proxmox na mesma casa) atrás de um único link residencial com IP
+dinâmico, sem redundância elétrica, sem backup geograficamente distribuído. A própria ADR-013
+já reconhece isso ao restringir a exposição pública a rotas de webhook específicas, nunca à
+aplicação inteira.
+
+Ao menos um projeto (`amfit`) trata dado de saúde/atividade física e dado financeiro de
+terceiros, sob LGPD — o que teria puxado esta decisão de qualquer forma. Em vez de decidir
+"qual nuvem" e "como conectar no lab" a cada projeto que chegar nesse ponto, esta ADR
+resolve as duas perguntas uma vez, como padrão do lab: qualquer projeto que precisar de
+produção em nuvem pública segue este caminho, salvo justificativa específica documentada
+na ADR do próprio projeto.
+
+**Alternativas consideradas (provedor):**
+
+| Critério | AWS (`sa-east-1`, São Paulo) | Azure (`Brazil South`) | GCP (`southamerica-east1`, Osasco-SP) | Oracle Cloud (OCI, `sa-saopaulo-1`) |
+| --- | --- | --- | --- | --- |
+| Região no Brasil, paridade de serviço | Confirmada — EKS, RDS, ElastiCache disponíveis | Confirmada — AKS, Postgres Flexible Server disponíveis | Confirmada — GKE, Cloud SQL, Memorystore disponíveis | Existe, mas com relatos de baixa disponibilidade de instâncias no tier free |
+| Object storage | S3 nativo — zero-code para qualquer projeto que já use um SDK compatível com S3 (ex.: MinIO no lab) | Blob Storage — API própria, não é S3 | GCS — API própria, compat S3 não é 1:1 nativo | Object Storage próprio, compat S3 parcial |
+| Esforço operacional p/ time pequeno (2-3 devs) | Médio (mitigável com Fargate profiles) | Médio-alto | **Baixo com GKE Autopilot** (sem gestão de nó) | Médio, mas OKE exige conta paga (PAYG) |
+| Certificações (ISO 27001/27701, SOC 2) + DPA compatível com LGPD | Sim | Sim | Sim | Ecossistema de compliance menor |
+| Maturidade Terraform/suporte em português | Muito alta | Alta | Alta, comunidade BR menor | Baixa |
+| Tier gratuito | Padrão (12 meses + free tier limitado) | Padrão | Padrão | "Always Free" agressivo, mas teve limites de ARM reduzidos pela metade em 2026 |
+
+Provedores mais baratos (DigitalOcean, Vultr, Linode/Akamai) ficam de fora por não terem
+paridade de certificação/DPA compatível com dado sensível de terceiros — a Vultr tem DC em
+São Paulo, mas nenhum desses tem o nível de compliance formal dos quatro acima.
+
+**Decisão:**
+
+1. **AWS `sa-east-1` é o padrão do lab** para qualquer projeto que precisar de produção em
+   nuvem pública — EKS (ou Fargate profiles, para reduzir gestão de nó), RDS para
+   Postgres/MySQL conforme o projeto, ElastiCache para Redis, S3 para qualquer storage que
+   hoje use MinIO (migração de SDK é zero-code, mesma API).
+2. **GKE Autopilot é a alternativa aceita** quando o projeto não depender de compatibilidade
+   nativa com S3 (nenhum MinIO/storage S3-compatible em uso) e a prioridade for minimizar
+   esforço operacional de um time pequeno — é o mais hands-off dos três (paga por pod, sem
+   node a gerenciar).
+3. **Azure e OCI não são recomendados** sem uma justificativa específica do projeto (ex.:
+   stack majoritariamente .NET para Azure) — documentar essa justificativa na ADR do
+   próprio projeto se for o caso.
+4. **Conectividade lab↔cloud**: nunca abrir porta no roteador residencial — mesma filosofia
+   já estabelecida na ADR-013. Um mesh outbound-only (Tailscale, ou WireGuard caso se
+   prefira autogerenciar) entre um nó/pod na VPC cloud e a rede do lab, usado como o
+   caminho que o Tekton/ArgoCD do lab usam para alcançar o cluster de produção — não uma
+   VPN dedicada cara, nem exposição de IP público do lab.
+5. **A esteira de deploy não é reconstruída, é estendida**: o cluster cloud entra como um
+   segundo destino registrado no ArgoCD (`argocd cluster add` — suporte nativo
+   multi-cluster), com overlay Kustomize por ambiente. O lab continua sendo o ambiente de
+   CI/CD e dev/staging exatamente como hoje; a promoção para produção é a mesma imagem já
+   validada no lab, promovida via Git (gate manual, ex.: tag de release), nunca rebuild.
+
+**Justificativa:**
+
+- Resolve a mesma pergunta uma única vez em vez de a cada projeto — quando `amactive`,
+  `realtpmsys` ou `training-performance-hub` chegarem neste ponto, a resposta já existe.
+- AWS como padrão evita que um projeto que já escolheu um storage S3-compatible (caso do
+  MinIO no `amfit`, documentado no SDD do projeto como decisão pensando exatamente nisso)
+  tenha que reabrir essa decisão de arquitetura ao migrar para produção.
+- O mesh outbound-only para a conectividade reaproveita um princípio já validado em
+  produção neste lab (ADR-013) em vez de introduzir um padrão novo de rede.
+- Estender o ArgoCD/Tekton existentes (em vez de outra ferramenta de deploy) significa que
+  nenhuma habilidade nova precisa ser aprendida pelo time — o suporte multi-cluster do
+  ArgoCD é nativo, não uma extensão não testada.
+
+**Esforço estimado (por projeto, referência):**
+
+| Fase | O que entra | Esforço (pessoa-dia) |
+| --- | --- | --- |
+| 0 — Conta e decisões | Conta cloud, billing alerts, MFA, decisão de domínio, revisão de DPA/LGPD (jurídico, paralelo) | 0,5–1 |
+| 1 — Landing zone de rede | VPC, subnets públicas/privadas, NAT, Security Groups, IAM baseline (least-privilege) via Terraform | 2–3 |
+| 2 — Conectividade lab↔cloud | Mesh outbound-only (Tailscale/WireGuard) — ver decisão acima | 1–2 |
+| 3 — Cluster + serviços de dado | EKS/GKE Autopilot, banco gerenciado, cache gerenciado, bucket de objeto versionado, secrets manager, via Terraform | 3–5 |
+| 4 — Estender o GitOps | Registrar o cluster cloud no ArgoCD, overlay Kustomize por ambiente, task de promoção no Tekton (sem rebuild) | 2–3 |
+| 5 — Migração de dados + cutover | Dump/restore ou replicação lógica do banco; migração de objeto (trivial se já S3-compatible); DNS/TLS; smoke tests | 2–4 |
+| 6 — Hardening de produção | Backup com teste de restore, alerta (Grafana do lab pode federar), runbook de incidente, WAF, rotação de segredo | 3–5 |
+
+Total de referência: **~14–23 dias-pessoa** de trabalho técnico direto por projeto, fora o
+tempo de aprovação jurídica/DPO (que corre em paralelo, não trava a engenharia). Ver o
+procedimento operacional detalhado no runbook, [§8](./runbook.md#8-produção-em-nuvem-pública-procedimento-genérico-multi-projeto).
+
+**Consequências:**
+
+- Nenhuma mudança no lab hoje — esta ADR não implanta nada, só resolve a decisão
+  antecipadamente para quando um projeto precisar.
+- Cada projeto ainda decide individualmente **se e quando** migrar para produção; esta ADR
+  decide **qual nuvem e como conectar** quando isso acontecer.
+- Custo recorrente de nuvem só começa a existir quando um projeto de fato provisionar —
+  nenhum orçamento é comprometido por esta decisão isoladamente.
+- Se as circunstâncias mudarem (ex.: um projeto futuro depender fortemente de serviço
+  específico de outro provedor), a exceção deve ser justificada e registrada na ADR do
+  próprio projeto, não editada aqui — esta ADR é o padrão, não uma regra sem exceção.

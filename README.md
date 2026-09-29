@@ -47,7 +47,7 @@ Laboratório completo de infraestrutura home-lab com cluster Kubernetes K3s mult
 | Documento | Conteúdo |
 | --- | --- |
 | [docs/architecture.md](docs/architecture.md) | Topologia, inventário de hardware, diagrama do cluster, componentes por namespace |
-| [docs/adr.md](docs/adr.md) | 14 Architecture Decision Records — por que cada tecnologia foi escolhida |
+| [docs/adr.md](docs/adr.md) | 15 Architecture Decision Records — por que cada tecnologia foi escolhida |
 | [docs/runbook.md](docs/runbook.md) | Procedimentos de instalação, operações day-2 e P1–P19 de troubleshooting |
 
 ## Estrutura do repositório

@@ -21,6 +21,7 @@ Para entender _o que_ está instalado e _por que_, consulte:
 5. [Operações day-2](#5-operações-day-2)
 6. [Acessos e credenciais](#6-acessos-e-credenciais)
 7. [Troubleshooting — problemas conhecidos](#7-troubleshooting--problemas-conhecidos)
+8. [Produção em nuvem pública (procedimento genérico multi-projeto)](#8-produção-em-nuvem-pública-procedimento-genérico-multi-projeto)
 
 ---
 
@@ -1378,3 +1379,65 @@ kubectl patch application app-of-apps -n cicd --type merge \
 - `omniroute` (107, rodando): mesma troca pra `192.168.1.117/24` (MAC `BC:24:11:61:37:BF` preservado, `ip6=dhcp` mantido). Exigiu reboot do CT (`POST /nodes/pve2/lxc/107/status/reboot`) pra pegar a rede nova — breve indisponibilidade. **Validado:** interface reportou `192.168.1.117` via `interfaces` API e a Web UI (`http://192.168.1.117:20128`) respondeu HTTP 200 após a app subir (~40s depois do reboot; o `TcpTestSucceeded` da porta ficou `True` antes da app responder HTTP — normal, a porta abre antes do handler estar pronto).
 
 **Pendente:** atualizar o registro do NetBox de `ollama` (status `dhcp` → `active`/`static`, como foi feito pro `homepage` em P31) — não tinha credencial admin do NetBox disponível nesta sessão (só o token do agente, somente leitura). `omniroute` no NetBox já estava como `active` (não `dhcp`), então não precisa de mudança de status, só a descrição continua dizendo "(DHCP)" — atualizar texto quando mexer no registro do `ollama`.
+
+---
+
+## 8. Produção em nuvem pública (procedimento genérico multi-projeto)
+
+> **Decisão e comparativo de provedores:** ver [ADR-015](./adr.md#adr-015).
+
+Procedimento de referência para quando qualquer projeto hospedado neste lab (`amfit`,
+`amactive`, `realtpmsys`, `training-performance-hub`, ou um futuro) precisar de um
+ambiente produtivo real em nuvem pública. O lab continua sendo o ambiente de CI/CD e
+dev/staging exatamente como é hoje — a nuvem entra só como o plano de dados e serving de
+produção. Nenhuma destas fases é executada preventivamente; este procedimento só roda
+quando um projeto específico decidir migrar.
+
+### 8.1 Pré-requisitos antes de começar
+
+- Provedor decidido (AWS por padrão — ver ADR-015) e projeto/subscription/conta criada.
+- Domínio próprio do projeto (produção não deve depender do Cloudflare Tunnel do lab,
+  que é para dev/webhooks — ver ADR-013).
+- Se o projeto tratar dado pessoal de terceiros: revisão de DPA/LGPD com o dono do
+  projeto antes do cutover de dados reais (etapa jurídica, corre em paralelo às fases
+  técnicas abaixo, não bloqueia o provisionamento de infraestrutura vazia).
+
+### 8.2 Fases
+
+| Fase | O que entra | Esforço (pessoa-dia) |
+| --- | --- | --- |
+| 0 — Conta e decisões | Conta cloud, billing alerts, MFA, decisão de domínio, revisão de DPA/LGPD (jurídico, paralelo) | 0,5–1 |
+| 1 — Landing zone de rede | VPC, subnets públicas/privadas, NAT, Security Groups, IAM baseline (least-privilege, sem uso de root no dia a dia) via Terraform | 2–3 |
+| 2 — Conectividade lab↔cloud | Mesh outbound-only (Tailscale, ou WireGuard se preferir autogerenciar) — ver §8.3 | 1–2 |
+| 3 — Cluster + serviços de dado | Cluster gerenciado (EKS/Fargate profiles, ou GKE Autopilot conforme ADR-015), banco gerenciado, cache gerenciado, bucket de objeto versionado, secrets manager — via Terraform, reaproveitando o padrão de módulos já usado pro Proxmox (provider novo) | 3–5 |
+| 4 — Estender o GitOps | Ver §8.4 | 2–3 |
+| 5 — Migração de dados + cutover | Dump/restore ou replicação lógica do banco; migração de objeto (`mc mirror` ou equivalente — trivial se o projeto já usa storage S3-compatible); DNS/TLS; smoke tests | 2–4 |
+| 6 — Hardening de produção | Backup automatizado com teste de restore, alerta (o Grafana do lab pode federar métricas do cluster cloud), runbook de resposta a incidente, WAF, rotação de segredo | 3–5 |
+
+Total de referência: **~14–23 dias-pessoa** por projeto. Para um time de 2-3 devs
+dedicado, isso é 3–5 semanas corridas; picotado ao lado do roadmap de produto, mais
+realista pensar em 2-3 meses.
+
+### 8.3 Conectividade lab↔cloud
+
+Nunca abrir porta no roteador residencial do lab — mesmo princípio já validado na
+ADR-013 (túnel outbound-only). Um mesh (Tailscale é o caminho mais simples; WireGuard
+puro se preferir não depender de um serviço de terceiro) conecta um nó/pod na VPC do
+provedor cloud à rede do lab, sem VPN dedicada cara e sem expor o IP residencial. Esse
+mesh vira o caminho que o `kubectl`/ArgoCD/Tekton do lab usam para alcançar a API do
+cluster de produção.
+
+### 8.4 Estender o GitOps existente (não reconstruir)
+
+O cluster cloud entra como um **segundo destino registrado no ArgoCD**
+(`argocd cluster add <contexto-do-cluster-cloud>` — suporte multi-cluster nativo, não
+uma extensão não testada), com overlay Kustomize por ambiente (`dev` = lab, `prod` =
+cloud). O Tekton do lab não muda de ferramenta — ganha só uma Task de promoção que
+aponta a mesma imagem já construída e testada (mesma tag/digest do Harbor) para o
+ambiente `prod`, nunca um rebuild. O gate de promoção pode ser uma tag de release
+(`v*`) em vez de todo push em `main`, para produção não sincronizar automaticamente a
+cada commit como o `dev` já faz hoje.
+
+Fluxo resultante: commit → build/test no Tekton do lab → deploy automático em `dev`
+(como já acontece hoje) → gate manual (ex.: tag) → ArgoCD sincroniza a mesma imagem já
+validada para o cluster cloud (`prod`).
