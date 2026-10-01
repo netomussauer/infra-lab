@@ -1267,6 +1267,16 @@ kubectl patch application app-of-apps -n cicd --type merge \
 
 **Pendente (correção durável):** builds Tekton fora do nó, ler SMART do disco e SSD no lugar do HDD (ou mover Pi-hole/Postgres/Redis/Prometheus/Loki para o worker do `pve2`, que tem SSD; hoje 47% de RAM usada lá, então há pouca folga além do Grafana). Diagnóstico: `iostat -x 1 3`, `cat /proc/pressure/io`, `ethtool enp2s0 | grep Speed`, `sudo smartctl -H -A /dev/sda` (smartmontools não estava instalado).
 
+**Nova ocorrência confirmada em 2026-09-30/10-01 — o mesmo sintoma agora trava `go mod download`:** três builds consecutivos do `amfit-build-api` (pinado em `ubuntu-neto` via `nodeSelector`, mesmo do resto deste P) tiveram o passo `golang-test` degradar de ~6–9 min (linha de base histórica, dezenas de builds) para 18 min, depois 26 min (morto pelo `PipelineRunTimeout` de 30 min antes de terminar) e por fim 25+ min (morto de novo). Log capturado do passo `step-vet-and-test` antes do pod ser encerrado:
+
+```text
+>>> go mod download (ate 3 tentativas, 90s cada)
+go: github.com/andybalholm/brotli@v1.1.0: Get "https://proxy.golang.org/github.com/andybalholm/brotli/@v/v1.1.0.mod": net/http: TLS handshake timeout
+>>> tentativa 1 falhou/travou, tentando de novo...
+```
+
+`kubectl top node ubuntu-neto` no momento mostrava só ~14–21% CPU / ~30–43% RAM — igual ao padrão já descrito acima ("`kubectl top` mostrando só ~15% CPU/~50% RAM" sob IO saturado, porque o gargalo é IO, não CPU/RAM). Nenhum dos 3 commits que dispararam esses builds alterava código Go, o que descarta causa no código e reforça que é o mesmo problema de IO do nó, agora também atrasando handshakes TLS para fora do cluster (proxy de módulos Go), não só criação de pod/containerd. Retry manual do `PipelineRun` (recriado via `kubectl create -f` com os mesmos `params`) não resolveu — reforça que esperar o IO do nó esvaziar é mais eficaz que tentar de novo na hora.
+
 ### P27: Harbor — `harbor-database` morto por sonda de 1s; push do kaniko falha com 401/"stopped after 10 redirects" (2026-09-24)
 
 **Sintoma:** builds Tekton (ex. `amactive`, 15–17/set) compilam tudo e falham só no push: `stopped after 10 redirects` no `/service/token`, `401 Unauthorized` em `HEAD /v2/.../manifests`, `checking push permission … POST /v2/.../blobs`. Builds de API só passam no pod `-retry1`. `harbor-database-0` com **16 restarts** (exit 137).
