@@ -73,3 +73,5 @@ data:
     # AMACTIVE — controle de estoque/vendas roupas esportivas (FastAPI + React)
     address=/api.amactive.local/192.168.1.212
     address=/app.amactive.local/192.168.1.213
+    # Vitrine (loja online) — mesma faixa do amactive, IP reservado no NetBox (lb_amactive_loja)
+    address=/loja.amactive.local/192.168.1.214
