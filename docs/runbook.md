@@ -1390,6 +1390,18 @@ go: github.com/andybalholm/brotli@v1.1.0: Get "https://proxy.golang.org/github.c
 
 **Pendente:** atualizar o registro do NetBox de `ollama` (status `dhcp` → `active`/`static`, como foi feito pro `homepage` em P31) — não tinha credencial admin do NetBox disponível nesta sessão (só o token do agente, somente leitura). `omniroute` no NetBox já estava como `active` (não `dhcp`), então não precisa de mudança de status, só a descrição continua dizendo "(DHCP)" — atualizar texto quando mexer no registro do `ollama`.
 
+### P34: VMs/CTs sem `onboot=1` não voltam sozinhas depois de um reboot do host Proxmox — segunda ocorrência (2026-10-20)
+
+**Sintoma/achado:** depois que o `pve2` foi reiniciado deliberadamente (validação de uma segunda interface de rede), a VM `k3s-worker-pve2` (203) precisou ser iniciada manualmente, e o CT `omniroute` (107) ficou parado sem ninguém notar até uma varredura de saúde posterior — nenhum dos dois tinha `onboot=1`. Checado via API (`GET .../qemu/203/config` e `.../lxc/107/config`): ambos retornavam `onboot: None` (equivalente a desabilitado). Nenhuma tarefa de `stop` do Proxmox aparece no histórico pro CT 107 — ele simplesmente não subiu junto com o host, não foi parado por uma ação externa.
+
+Essa é a **mesma causa raiz** do incidente de 2026-10-09 (P-sem-número, ver seção de incidentes de outage): quando o host `virt` caiu e voltou, `k3s-server`/`k3s-worker-cicd`/`ci-runner` também não tinham `onboot=1` e precisaram de start manual via API. Dois hosts, mesmo gap de configuração.
+
+**Correção aplicada em 2026-10-20 (API, credencial admin):** `onboot=1` setado em `k3s-worker-pve2` (203) e `omniroute` (107); `omniroute` reiniciado (`vzstart`) e confirmado `running`.
+
+**Detalhe de API encontrado no processo:** o endpoint de config de CT/LXC exige método **`PUT`** (`/nodes/<node>/lxc/<id>/config`); o de VM/QEMU exige **`POST`** (`/nodes/<node>/qemu/<id>/config`) — usar o verbo errado retorna `405`-like (`"Method ... not implemented"`), não um erro de parâmetro. Já causou um descarte silencioso de chamada nesta sessão.
+
+**Pendente — auditoria mais ampla:** não foi confirmado se `k3s-server`, `k3s-worker-cicd` e `ci-runner` (em `virt`) já têm `onboot=1` desde o incidente de 2026-10-09 ou se continuam sem — não havia rota até `192.168.1.0/24` nesta sessão pra checar (acesso só via `pve2`/`192.168.68.x`, a segunda interface de rede que está em teste como parte do projeto de redundância de WAN — ainda sem ADR formal). Auditar `onboot` em **todas** as VMs/CTs dos dois nós na próxima sessão com acesso normal à rede, não só reagir host a host conforme os incidentes acontecem.
+
 ---
 
 ## 8. Produção em nuvem pública (procedimento genérico multi-projeto)
