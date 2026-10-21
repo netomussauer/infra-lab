@@ -27,6 +27,7 @@ Cada ADR documenta uma decisão de design tomada neste projeto: o contexto que l
 | [ADR-013](#adr-013) | Cloudflare Tunnel + ingress-nginx interno para expor endpoints públicos (vs. port-forward direto, vs. VPS reverse proxy, vs. Tailscale Funnel) | Aceito |
 | [ADR-014](#adr-014) | Descontinuar infra-lab-proxmox e migrar bookstack-sync/netbox-scripts para infra-lab | Aceito |
 | [ADR-015](#adr-015) | Nuvem pública para ambiente produtivo (AWS como padrão) + conectividade lab↔cloud via mesh outbound-only | Aceito (referência — nenhum projeto migrado ainda) |
+| [ADR-016](#adr-016) | Acesso administrativo de fallback à infraestrutura quando a rede primária está indisponível (vs. VPN dedicada, vs. nada formal) | Aceito (canal local já em uso; SSH via Cloudflare Tunnel ainda não implementado) |
 
 ---
 
@@ -739,3 +740,100 @@ procedimento operacional detalhado no runbook, [§8](./runbook.md#8-produção-e
 - Se as circunstâncias mudarem (ex.: um projeto futuro depender fortemente de serviço
   específico de outro provedor), a exceção deve ser justificada e registrada na ADR do
   próprio projeto, não editada aqui — esta ADR é o padrão, não uma regra sem exceção.
+
+---
+
+## ADR-016
+
+**Título:** Acesso administrativo de fallback à infraestrutura quando a rede primária está indisponível (vs. VPN dedicada, vs. nada formal)
+
+**Status:** Aceito (canal local via WAN2 já em uso na prática; SSH via Cloudflare Tunnel ainda não implementado)
+
+**Contexto:**
+
+Em 2026-10, durante uma instabilidade real do link primário de internet
+(ISP1, o roteador doméstico em `192.168.1.254`), ficou evidente que não
+havia nenhum caminho formal para administrar a infraestrutura do lab
+(Proxmox, principalmente) quando a rede `192.168.1.0/24` está inacessível.
+O acesso que de fato funcionou naquele incidente foi improvisado: o host
+`pve2` já tinha, por acaso, uma segunda interface de rede ligada à ISP2
+(parte da obra em andamento de redundância de WAN — ver seção de
+incidentes do runbook, 2026-10), e essa interface por coincidência estava
+na mesma sub-rede Wi-Fi que o notebook do operador naquele exato momento.
+Diagnosticar e corrigir o lab inteiro — incluindo religar VMs que não
+subiram sozinhas após o reboot do host — só foi possível por essa
+coincidência de topologia, não por um plano.
+
+Isso expõe uma lacuna real: o lab não tem um canal de administração que
+seja (a) independente de qual WAN está ativa e (b) utilizável de fora da
+rede física do lab, para quando o responsável não está em casa durante um
+incidente.
+
+**Alternativas consideradas:**
+
+| Critério | A) Rede da WAN2 como canal de management oficial | B) SSH/API via Cloudflare Tunnel (break-glass) | C) VPN dedicada (WireGuard/Tailscale) | D) Nada formal (ad hoc, caso a caso) |
+| --- | --- | --- | --- | --- |
+| Funciona fora da rede física do lab | Não — exige estar na mesma LAN/Wi-Fi que a ISP2 | Sim — qualquer lugar com internet | Sim | Não |
+| Depende de qual WAN do lab está viva | Só funciona se a ISP2 estiver viva | Qualquer uma, já que é outbound-only do lado do lab | Qualquer uma | — |
+| Esforço de implementação | Zero — já existe como efeito colateral do projeto de redundância de WAN | Médio — túnel `cloudflared` dedicado + Cloudflare Access (Zero Trust) | Médio-alto — mais um sistema a provisionar, manter atualizado e segurar | Zero, mas custo alto repetido a cada incidente (horas de troubleshooting reativo, como em 2026-10) |
+| Superfície de ataque nova | Nenhuma — não é alcançável de fora do lab | Pequena, mitigada por autenticação na borda (Cloudflare Access) antes de qualquer pacote chegar ao host | Média — VPN é, por natureza, um ponto de entrada remoto adicional | Nenhuma, mas também nenhuma solução |
+| Consistência com o resto do lab | — | Mesmo padrão já usado para exposição pública (ADR-013): outbound-only, sem porta aberta no roteador | Introduz um padrão de acesso remoto novo, sem precedente no lab | — |
+
+**Decisão:** Combinar **A + B**, porque resolvem cenários diferentes e não
+competem entre si:
+
+- **(A) Oficializar a rede da WAN2 como canal de management local de
+  emergência.** Quando a VM de roteamento multi-WAN (OPNsense, projeto de
+  redundância em andamento) estiver em produção, reservar uma interface de
+  management dedicada nessa segunda rede — não depender de uma interface
+  de teste improvisada como aconteceu em 2026-10. Zero custo adicional,
+  já comprovado funcionando num incidente real.
+- **(B) Construir acesso SSH ao `pve2`/Proxmox via Cloudflare Tunnel**,
+  como canal de resposta remota a incidentes — o cenário que mais importa
+  para reduzir tempo de resolução, já que nem sempre o responsável estará
+  fisicamente em casa. Túnel dedicado e separado do túnel de exposição
+  pública dos apps (`lab-edge`, ADR-013), para não misturar raio de
+  impacto, protegido por Cloudflare Access (autenticação por e-mail/OTP
+  antes de qualquer tentativa de SSH chegar ao host). Ainda não
+  implementado — fica como próximo passo deste ADR.
+
+**Justificativa:**
+
+- (A) já se provou na prática: foi o único motivo pelo qual o lab pôde ser
+  diagnosticado e corrigido durante o incidente de 2026-10 sem precisar de
+  deslocamento físico. Formalizá-lo custa essencialmente nada — só exige
+  manter uma interface de management estável nessa rede em vez de uma
+  interface de teste descartável.
+- (B) resolve a lacuna que (A) não cobre: acesso de qualquer lugar, não só
+  de dentro da casa. Segue exatamente o mesmo padrão arquitetural já
+  validado e documentado no ADR-013 (outbound-only, sem porta aberta,
+  autenticação na borda) — não introduz um paradigma novo de segurança
+  para o lab, só estende o já aceito para um caso de uso diferente (acesso
+  administrativo em vez de exposição de aplicação).
+- VPN dedicada (C) foi descartada pelo mesmo raciocínio de frugalidade já
+  usado para rejeitar Vault (ADR-011/012) e VPS como jump box (ADR-013):
+  mais um sistema a provisionar e manter seguro, sem resolver nada que a
+  combinação A+B não resolva já com infraestrutura que o lab já opera
+  (Cloudflare) ou está construindo de qualquer forma (a segunda interface
+  de rede do projeto de redundância de WAN).
+- Nada formal (D) é o que o lab tinha até 2026-10, e o custo ficou
+  evidente: horas de troubleshooting reativo tentando entender por que o
+  acesso não funcionava, em vez de minutos usando um canal já desenhado.
+
+**Consequências:**
+
+- (A) depende da VM de roteamento multi-WAN (OPNsense) chegar a produção
+  com uma interface de management dedicada nessa rede — enquanto isso não
+  acontece, o canal local continua sendo a interface de teste atual
+  (`vmbr1` no `pve2`), que não é garantida permanente.
+- (B) é trabalho ainda não feito: criar o túnel dedicado, a aplicação no
+  Cloudflare Access com a política de autenticação, e documentar o
+  procedimento de uso (`cloudflared access ssh`) no runbook antes de
+  depender dele num incidente real.
+- Se o `pve2` ficar totalmente inacessível por ambas as rotas (ex.: o
+  próprio host física/eletricamente fora do ar, não só a rede), nenhuma
+  das duas resolve — isso continua exigindo presença física, fora do
+  escopo deste ADR.
+- Esse acesso de fallback é estritamente administrativo (Proxmox/hosts) —
+  não substitui nem se mistura com o túnel de exposição pública de
+  aplicações do ADR-013, que continua separado por desenho.
