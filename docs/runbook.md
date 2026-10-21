@@ -1402,6 +1402,18 @@ Essa é a **mesma causa raiz** do incidente de 2026-10-09 (P-sem-número, ver se
 
 **Pendente — auditoria mais ampla:** não foi confirmado se `k3s-server`, `k3s-worker-cicd` e `ci-runner` (em `virt`) já têm `onboot=1` desde o incidente de 2026-10-09 ou se continuam sem — não havia rota até `192.168.1.0/24` nesta sessão pra checar (acesso só via `pve2`/`192.168.68.x`, a segunda interface de rede que está em teste como parte do projeto de redundância de WAN — ainda sem ADR formal). Auditar `onboot` em **todas** as VMs/CTs dos dois nós na próxima sessão com acesso normal à rede, não só reagir host a host conforme os incidentes acontecem.
 
+### P35: Edge (`cloudflared`/`ingress-nginx-defaultbackend`) fora do ar após a rede principal voltar — duas causas distintas (2026-10-21)
+
+**Sintoma/achado:** varredura de saúde logo depois que a rede principal (`192.168.1.0/24`, ISP1) foi restaurada de uma instabilidade. `cloudflared` com uma réplica em `CrashLoopBackOff` (390 restarts) e outra com 3902 restarts acumulados; `ingress-nginx-defaultbackend` em `CrashLoopBackOff` há 26h.
+
+**Causa 1 — `cloudflared` — DNS externo transitório:** log mostrava `lookup _v2-origintunneld._tcp.argotunnel.com on 10.43.0.10:53: server misbehaving`. Teste direto contra o CoreDNS (`nslookup registry.k8s.io 10.43.0.10` de dentro de um pod) resolveu normalmente, confirmando que não era um problema persistente de configuração — era resquício transitório da instabilidade da ISP1 durante a janela de restauração da rede. **Corrigido só apagando o pod** (`kubectl delete pod`) pra forçar nova tentativa fora da janela ruim; voltou a `1/1` imediatamente.
+
+**Causa 2 — `ingress-nginx-defaultbackend` — incompatibilidade de arquitetura, não relacionada à rede:** apagar o pod não resolveu; o pod recriado foi parar no `raspneto` (o nó ARM do cluster) e crashou com `exec /server: exec format error` no log do container anterior — a imagem `registry.k8s.io/defaultbackend-amd64:1.5` é literalmente amd64-only, sem build pra ARM. O Deployment (gerado pelo chart `ingress-nginx`) não tinha nenhum `nodeSelector` restringindo arquitetura, diferente do `cloudflared` (que já tem `kubernetes.io/arch: amd64` desde a implantação inicial, P25 — ver `kubernetes/edge/cloudflared/deployment.yaml`). Provavelmente rodou em nó amd64 por sorte do agendamento durante meses, até cair no `raspneto` dessa vez.
+
+**Correção aplicada em 2026-10-21 (`kubernetes/edge/ingress-nginx/helm-values.yaml` + `helm upgrade`):** `nodeSelector: kubernetes.io/arch: amd64` adicionado tanto em `controller` quanto em `defaultBackend` (o controller também usa uma imagem amd64-only, só não tinha batido o azar ainda). Aplicado via `helm upgrade ingress-nginx ingress-nginx/ingress-nginx -f helm-values.yaml -n edge --wait` (revision 5). Validado: `cloudflared` 2/2, `ingress-nginx-defaultbackend` 1/1, `ingress-nginx-controller` 1/1, todos re-agendados em nós amd64.
+
+**Achado à parte, fora do escopo de infra:** na mesma varredura, o CronJob `amactive-expirar-reservas` apareceu falhando em toda execução (a cada ~5 min) com `sqlalchemy.exc.NoReferencedTableError: Foreign key associated with column 'pedido.cliente_id' could not find table 'cliente'` — bug de aplicação (import de modelo faltando no script do CronJob), não investigado/corrigido aqui por ser código do projeto `amactive`, não do `infra-lab`.
+
 ---
 
 ## 8. Produção em nuvem pública (procedimento genérico multi-projeto)

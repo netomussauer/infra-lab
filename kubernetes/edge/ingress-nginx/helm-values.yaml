@@ -12,6 +12,9 @@
 controller:
   replicaCount: 1 # hardware frugal (Sandy/Ivy Bridge) — subir pra 2 se virar SPOF crítico
 
+  nodeSelector:
+    kubernetes.io/arch: amd64 # imagem registry.k8s.io/ingress-nginx/controller não publica build p/ raspneto (armv7/arm64) — ver P35
+
   ingressClassResource:
     name: nginx
     default: false # não substitui nenhum IngressClass existente no cluster
@@ -42,6 +45,11 @@ controller:
 
 defaultBackend:
   enabled: true
+  nodeSelector:
+    kubernetes.io/arch: amd64 # imagem registry.k8s.io/defaultbackend-amd64 é literalmente amd64-only —
+    # achado em 2026-10-21 (P35): caiu no raspneto (ARM) e crashou com
+    # "exec /server: exec format error", ficando em CrashLoopBackOff por
+    # horas sem ninguém notar até a próxima varredura de saúde.
   resources:
     requests:
       cpu: 5m
