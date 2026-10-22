@@ -1452,6 +1452,16 @@ pct exec 109 -- certbot certonly --dns-cloudflare \
 
 ---
 
+### P37: Token Proxmox com `privsep=1` — ACL no token sozinha não é suficiente (2026-10-22)
+
+**Sintoma:** seguindo o mesmo padrão já validado na P33 (`PUT /access/acl` concedendo uma role a um token específico, `tokens=<userid>!<tokenname>`), a ACL aparecia corretamente na listagem (`GET /access/acl`), mas o token seguia sem nenhuma permissão efetiva — `GET /access/permissions?userid=...` retornava vazio, e chamadas reais falhavam com `Permission check failed`.
+
+**Causa raiz:** um token com `privsep=1` (o padrão/recomendado) tem sua permissão efetiva **limitada pela permissão do próprio usuário dono** — a ACL do token nunca faz o token exceder o que o usuário já tem, mesmo que a ACL do token seja mais ampla. Se o usuário nunca recebeu nenhuma ACL própria (só o token recebeu), o teto efetivo é zero, independente da role dada ao token.
+
+**Correção:** ao conceder uma role que o usuário dono ainda não possui, é preciso aplicar a ACL em **dois lugares** — no usuário (define o teto) e no token (define o que ele de fato herda, até esse teto). Confirmado via introspecção de `/access/permissions` depois da correção: o conjunto completo de privilégios da role passou a aparecer, e uma escrita real foi aceita e retornou um UPID válido.
+
+---
+
 ## 8. Produção em nuvem pública (procedimento genérico multi-projeto)
 
 > **Decisão e comparativo de provedores:** ver [ADR-015](./adr.md#adr-015).
