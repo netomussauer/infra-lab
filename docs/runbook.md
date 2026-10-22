@@ -1416,6 +1416,31 @@ Essa é a **mesma causa raiz** do incidente de 2026-10-09 (P-sem-número, ver se
 
 ---
 
+### P36: Instalação do Vaultwarden — mais evidência concreta da instabilidade da ISP1 (2026-10-22)
+
+**Contexto:** durante o provisionamento do Vaultwarden (CT 109, `pve2`, ADR-017), diversos passos de rede falharam de forma intermitente — confirmando, com evidência nova e mais detalhada, a mesma instabilidade residual da ISP1 já registrada no P35 e nos incidentes de 2026-10-09/10-20.
+
+**Sintomas encontrados, em ordem:**
+1. **CT novo sem conectividade alguma** logo após criado — resolvido com `pct stop`/`pct start` completo (não bastou `pct reboot`); se repetiu uma segunda vez depois de eu editar a config de rede ao vivo (hotplug do veth deixa a bridge num estado que só um stop/start completo limpa, não um simples reboot do container).
+2. **Resolução DNS intermitente** mesmo com ping 0% de perda — `dig`/`curl` para `1.1.1.1` e `192.168.1.254` falhando com "no servers could be reached" em alguns momentos, funcionando perfeitamente segundos depois. Mitigado (não eliminado) ajustando `/etc/resolv.conf` para `options timeout:2 attempts:4`.
+3. **Red herring de MTU:** o roteador (`192.168.1.254`) respondeu a um ping grande com `Frag needed and DF set (mtu = 1492)` — assinatura clássica de PPPoE. Pareceu a causa óbvia, mas configurar `mtu=1492` no `net0` via API do Proxmox **nunca aplicou de verdade** na interface ao vivo (`ip link show` continuou em 1500 mesmo após reboot do CT) — e o problema seguiu se resolvendo e voltando independente disso. Conclusão: o MTU 1492 é real (path MTU do link), mas não foi a causa dos travamentos vistos aqui; não vale a pena perseguir esse ajuste de novo sem evidência melhor.
+4. **IPv6 sem rota nenhuma** no CT (`curl -6` falha instantâneo, não por timeout) — e o resolvedor do Debian retorna o registro AAAA primeiro para hosts dual-stack (`acme-v02.api.letsencrypt.org`, atrás da Cloudflare). O Python `requests`/`urllib3` do certbot não faz fallback automático pra IPv4 quando o IPv6 não tem rota — trava em vez de tentar o endereço seguinte. `net.ipv6.conf.all.disable_ipv6=1` via sysctl e `precedence ::ffff:0:0/96 100` em `/etc/gai.conf` foram aplicados mas **não mudaram** o que `getent hosts` retornava — o teste real (rodar o certbot de fato) é a única forma confiável de saber se pegou.
+5. **`api.cloudflare.com` inacessível de forma sustentada:** 15 tentativas do `certbot certonly --dns-cloudflare` ao longo de ~20 minutos (13:57–14:16), todas falhando com `Read timed out`/`NameResolutionError`/`Connection reset by peer` contra a API da Cloudflare — não um blip isolado, uma janela de instabilidade real e prolongada.
+
+**Estado final:** Vaultwarden rodando em HTTP (`http://192.168.1.73`), confirmado funcionando. HTTPS via Let's Encrypt (DNS-01, hostname `vault.amtech.app.br`, split-horizon via Pi-hole) **pausado** — toda a infraestrutura está pronta (certbot instalado, credencial Cloudflare configurada em `/root/.secrets/cloudflare.ini` dentro do CT, zona DNS confirmada acessível), só falta rodar o mesmo comando de novo numa janela de rede mais estável:
+
+```bash
+pct exec 109 -- certbot certonly --dns-cloudflare \
+  --dns-cloudflare-credentials /root/.secrets/cloudflare.ini \
+  --dns-cloudflare-propagation-seconds 30 \
+  -d vault.amtech.app.br --non-interactive --agree-tos \
+  --email netomussauer@gmail.com
+```
+
+**Por que isso importa:** é mais uma evidência concreta e detalhada (não só um "a internet caiu") de que a ISP1 tem degradação real e intermitente, não só quedas totais — reforça a prioridade do projeto de redundância de WAN (ADR-016) como algo que vai além de só cobrir uma queda total.
+
+---
+
 ## 8. Produção em nuvem pública (procedimento genérico multi-projeto)
 
 > **Decisão e comparativo de provedores:** ver [ADR-015](./adr.md#adr-015).
