@@ -60,6 +60,10 @@ data:
     address=/omniroute.lab.local/192.168.1.117
     # BookStack (CT 106 no pve2) — IP estático 192.168.1.64 desde 2026-09-24 (era DHCP; runbook P29)
     address=/bookstack.lab.local/192.168.1.64
+    # Vaultwarden (CT 109 no pve2) — IP estático 192.168.1.73, ADR-017
+    address=/vaultwarden.lab.local/192.168.1.73
+    # Hermes Agent (CT 108 no virt) — community-script, DHCP (sem IP garantido)
+    address=/hermesagent.lab.local/192.168.1.74
 
     # AMFIT (reserva — a alocar quando workloads subirem)
     address=/api.amfit.local/192.168.1.205
