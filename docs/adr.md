@@ -28,6 +28,7 @@ Cada ADR documenta uma decisão de design tomada neste projeto: o contexto que l
 | [ADR-014](#adr-014) | Descontinuar infra-lab-proxmox e migrar bookstack-sync/netbox-scripts para infra-lab | Aceito |
 | [ADR-015](#adr-015) | Nuvem pública para ambiente produtivo (AWS como padrão) + conectividade lab↔cloud via mesh outbound-only | Aceito (referência — nenhum projeto migrado ainda) |
 | [ADR-016](#adr-016) | Acesso administrativo de fallback à infraestrutura quando a rede primária está indisponível (vs. VPN dedicada, vs. nada formal) | Aceito (canal local já em uso; SSH via Cloudflare Tunnel ainda não implementado) |
+| [ADR-017](#adr-017) | Gestão de credenciais humanas com Bitwarden Cloud + Vaultwarden self-hosted (vs. 1Password, vs. KeePassXC, vs. HashiCorp Vault, vs. nada formal) | Aceito (decisão registrada; provisionamento ainda não feito) |
 
 ---
 
@@ -837,3 +838,102 @@ competem entre si:
 - Esse acesso de fallback é estritamente administrativo (Proxmox/hosts) —
   não substitui nem se mistura com o túnel de exposição pública de
   aplicações do ADR-013, que continua separado por desenho.
+
+---
+
+## ADR-017
+
+**Título:** Gestão de credenciais humanas com Bitwarden Cloud + Vaultwarden self-hosted (vs. 1Password, vs. KeePassXC, vs. HashiCorp Vault, vs. nada formal)
+
+**Status:** Aceito (decisão registrada; provisionamento ainda não feito)
+
+**Contexto:**
+
+O lab não tem hoje nenhuma solução formal para credenciais que um **humano**
+usa para acessar painéis administrativos (Proxmox, OPNsense, Harbor, Gitea,
+ArgoCD, NetBox, Pi-hole, Grafana, o app do roteador Deco, a conta
+Cloudflare, o registrador de domínio, GitHub). Essas credenciais estão
+hoje espalhadas em `docs/CREDENTIALS.local.md` (markdown gitignored, texto
+puro) e em múltiplos arquivos `~/.env.*` no WSL (texto puro, chmod 600) —
+tudo em uma única máquina Windows, sem backup redundante.
+
+Isso é um problema **diferente** do que o ADR-011 resolve: SealedSecrets/
+SOPS cobrem segredos que o **cluster** consome (senha de banco, token de
+API injetado em um Pod); este ADR cobre credenciais que um humano digita
+para entrar em uma interface. Não compete com o ADR-011, é complementar.
+
+O risco concreto: se a máquina Windows atual falhar, for perdida ou tiver
+o disco corrompido, o acesso administrativo a **toda** a infraestrutura do
+lab se perde de uma vez — nenhuma credencial está centralizada, versionada
+com segurança, nem recuperável de outro lugar.
+
+**Alternativas consideradas:**
+
+| Critério | Bitwarden Cloud (tier pessoal grátis) | Vaultwarden self-hosted (compatível com o protocolo Bitwarden) | 1Password | KeePassXC | HashiCorp Vault |
+| --- | --- | --- | --- | --- | --- |
+| Custo | Grátis | Grátis (só o compute, já ocioso no lab) | Pago (~US$36/ano) | Grátis | Grátis (self-host), mas operacionalmente caro |
+| Onde roda | Fora do lab, SaaS da Bitwarden | Dentro do lab (CT leve — Rust, SQLite) | Fora do lab, SaaS | Local, arquivo único | Dentro do lab |
+| Acesso se o lab inteiro cair | Funciona — independente da rede/energia do lab | Não funciona se o lab estiver fora do ar | Funciona | Funciona (arquivo local) | Não funciona se o lab cair |
+| Integração (browser, CLI, mobile) | Excelente | Excelente (mesmos apps do Bitwarden) | Excelente | Boa, sem sync nativo | Nenhuma para uso humano — é uma API |
+| Esforço de operar | Zero | Baixo (1 CT leve, SQLite, sem dependência externa) | Zero | Zero, mas sync manual | Alto — já rejeitado 2x nesta base de ADRs |
+| Compartilhamento/acesso de emergência | Sim (Emergency Access, organizations) | Sim (mesmo recurso, self-hosted) | Sim | Não nativo | N/A |
+| Consistência com o lab | — | Segue o padrão já usado para NetBox/Gitea/Harbor/BookStack (self-hosted) | Introduz dependência paga nova | — | Já descartado em ADR-011/012 pelo mesmo motivo (overkill para o caso de uso) |
+
+HashiCorp Vault foi descartado sem disputa — já foi avaliado e rejeitado
+duas vezes nesta mesma base de ADRs (011 e 012) pelo motivo certo: é uma
+ferramenta de segredos *machine-to-machine*, não um cofre de senhas para
+humano. Reabrir essa decisão com a ferramenta errada não faria sentido.
+
+**Decisão:** Combinar **Bitwarden Cloud + Vaultwarden self-hosted**, pela
+mesma lógica de dois-canais-que-não-competem já usada na ADR-016:
+
+- **Bitwarden Cloud (tier pessoal grátis)** para o conjunto pequeno de
+  credenciais _break-glass_* — root do Proxmox, root do OPNsense, admin do
+  roteador Deco, conta Cloudflare, registrador de domínio. Essas precisam
+  estar acessíveis **de fora do lab**, sempre, inclusive quando o lab
+  inteiro está fora do ar — é exatamente o cenário que a ADR-016 cobre do
+  lado da rede; este ADR cobre o mesmo cenário do lado da credencial.
+- **Vaultwarden self-hosted** (CT leve em `pve2` ou `virt`, mesmo padrão
+  de frugalidade de recursos já usado no resto do lab) para tudo que só
+  importa **depois** que o lab já está de pé — Harbor, Gitea, ArgoCD,
+  NetBox, Grafana, Pi-hole. Mantém controle total dos dados sem depender
+  de um terceiro para 100% das credenciais.
+
+**Justificativa:**
+
+- Resolve um ponto único de falha real e concreto: hoje, perder uma única
+  máquina Windows significa perder acesso administrativo a tudo.
+- A divisão em dois cofres replica exatamente o raciocínio que já validou
+  a ADR-016 — nunca guardar a chave de emergência de um sistema dentro do
+  próprio sistema que ela destranca.
+- Vaultwarden segue a prática já estabelecida no lab de hospedar serviços
+  próprios e leves (NetBox, Gitea, Harbor, BookStack) em vez de depender
+  de SaaS para tudo — consistente, não introduz um padrão novo.
+- 1Password foi descartado por custo recorrente sem vantagem real sobre a
+  combinação Bitwarden/Vaultwarden para este caso de uso — mesma lógica de
+  frugalidade já usada para rejeitar VPS como jump box (ADR-013) e Vault
+  (ADR-011/012).
+- KeePassXC foi descartado por não ter sincronização/compartilhamento
+  nativo — exigiria resolver isso com outra ferramenta (Syncthing,
+  Nextcloud), adicionando complexidade sem ganhar nada que o Bitwarden já
+  não ofereça de fábrica.
+- Nada formal (o status quo) é o que gerou o risco que motivou este ADR.
+
+**Consequências:**
+
+- Nenhuma mudança no lab ainda — esta ADR registra a decisão; o
+  provisionamento (criar a conta Bitwarden Cloud, subir o CT do
+  Vaultwarden, migrar as credenciais de `docs/CREDENTIALS.local.md` e dos
+  `~/.env.*`) é trabalho futuro.
+- Define um critério claro para decidir onde cada credencial nova vai: se
+  é necessária para destrancar o próprio lab quando ele está fora do ar,
+  vai no Bitwarden Cloud; se só importa com o lab já funcionando, vai no
+  Vaultwarden self-hosted.
+- `docs/CREDENTIALS.local.md` e os arquivos `~/.env.*` continuam existindo
+  até a migração acontecer — este ADR não os torna obsoletos
+  imediatamente.
+- Minhas (Claude) regras de não ler nem relocar credenciais existentes
+  continuam valendo sem alteração — nenhuma credencial será extraída de
+  dentro do Bitwarden/Vaultwarden por mim. Se no futuro fizer sentido um
+  token de API de escopo reduzido para uso por agente de IA, isso segue o
+  mesmo padrão já estabelecido na ADR-012, como uma decisão separada.
