@@ -1427,7 +1427,20 @@ Essa é a **mesma causa raiz** do incidente de 2026-10-09 (P-sem-número, ver se
 4. **IPv6 sem rota nenhuma** no CT (`curl -6` falha instantâneo, não por timeout) — e o resolvedor do Debian retorna o registro AAAA primeiro para hosts dual-stack (`acme-v02.api.letsencrypt.org`, atrás da Cloudflare). O Python `requests`/`urllib3` do certbot não faz fallback automático pra IPv4 quando o IPv6 não tem rota — trava em vez de tentar o endereço seguinte. `net.ipv6.conf.all.disable_ipv6=1` via sysctl e `precedence ::ffff:0:0/96 100` em `/etc/gai.conf` foram aplicados mas **não mudaram** o que `getent hosts` retornava — o teste real (rodar o certbot de fato) é a única forma confiável de saber se pegou.
 5. **`api.cloudflare.com` inacessível de forma sustentada:** 15 tentativas do `certbot certonly --dns-cloudflare` ao longo de ~20 minutos (13:57–14:16), todas falhando com `Read timed out`/`NameResolutionError`/`Connection reset by peer` contra a API da Cloudflare — não um blip isolado, uma janela de instabilidade real e prolongada.
 
-**Estado final:** Vaultwarden rodando em HTTP (`http://192.168.1.73`), confirmado funcionando. HTTPS via Let's Encrypt (DNS-01, hostname `vault.amtech.app.br`, split-horizon via Pi-hole) **pausado** — toda a infraestrutura está pronta (certbot instalado, credencial Cloudflare configurada em `/root/.secrets/cloudflare.ini` dentro do CT, zona DNS confirmada acessível), só falta rodar o mesmo comando de novo numa janela de rede mais estável:
+**Retomado em 2026-10-22 (mesmo dia, janela de rede melhor):** nova sequência de tentativas do `certbot certonly --dns-cloudflare` — de 5 tentativas, nenhuma emplacou (taxa de sucesso de conectividade a `api.cloudflare.com` subiu de 0/15 pra ~60% em teste isolado, mas não o suficiente pro fluxo completo do certbot, que faz várias chamadas em sequência). Decisão: usar **certificado autoassinado** por agora, com troca pro Let's Encrypt quando a rede estabilizar o bastante.
+
+**HTTPS definitivo aplicado (certificado autoassinado):**
+- CA própria gerada dentro do CT (`openssl`, RSA 4096, validade 10 anos) em `/etc/vaultwarden-tls/lab-ca.crt` + `lab-ca.key`; certificado do servidor (RSA 2048, 825 dias) assinado por ela, SAN cobrindo `vault.amtech.app.br`, `vaultwarden.lab.local` e `192.168.1.73`.
+- `nginx` instalado como proxy reverso em `443 → 127.0.0.1:80` (onde o container do Vaultwarden escuta). Config transferida via base64 pro CT pra evitar o problema clássico de quoting aninhado (Ansible → shell remoto → heredoc) — escrever o arquivo localmente e mandar em base64 é mais confiável que heredoc remoto quando há `$variáveis` do nginx no meio.
+- **CA pública comitada em `kubernetes/security/vaultwarden/lab-ca.crt`** (sem chave privada, seguro versionar — mesmo padrão do `harbor-ca.crt`, exceção no `.gitignore`). Precisa ser instalada manualmente como CA confiável em cada dispositivo que for usar o client do Bitwarden (navegador, celular) — sem isso, os apps vão recusar conectar (diferente de um navegador, que permite "avançar mesmo assim").
+
+**Mais dois achados no processo:**
+- O container do Vaultwarden **crashou sozinho** (`docker ps` mostrou `Exited (255)`) depois de um dos `pct stop`/`pct start` usados pra resolver a instabilidade de rede do CT — a política de restart original (`unless-stopped`) não foi suficiente pra ele voltar sozinho. Trocado para `--restart always` (`docker update --restart always vaultwarden`), que já se mostrou efetivo num novo ciclo de stop/start depois.
+- Depois de tudo funcionando internamente (`200` testado do próprio `pve2` e de dentro do CT), o acesso externo (da máquina do operador) continuou recusando conexão por mais alguns minutos mesmo com `ping` respondendo normalmente — mesmo padrão intermitente do resto deste P36, não um problema novo. Resolveu sozinho; confirmado funcionando de um dispositivo diferente (celular) na mesma rede.
+
+**Por que isso importa:** é mais uma evidência concreta e detalhada (não só um "a internet caiu") de que a ISP1 tem degradação real e intermitente, não só quedas totais — reforça a prioridade do projeto de redundância de WAN (ADR-016) como algo que vai além de só cobrir uma queda total.
+
+**Pendente:** trocar o certificado autoassinado pelo Let's Encrypt real quando a rede permitir uma sequência completa do `certbot` — toda a infraestrutura já está pronta (credencial Cloudflare em `/root/.secrets/cloudflare.ini` dentro do CT, certbot instalado), só rodar de novo:
 
 ```bash
 pct exec 109 -- certbot certonly --dns-cloudflare \
@@ -1436,8 +1449,6 @@ pct exec 109 -- certbot certonly --dns-cloudflare \
   -d vault.amtech.app.br --non-interactive --agree-tos \
   --email netomussauer@gmail.com
 ```
-
-**Por que isso importa:** é mais uma evidência concreta e detalhada (não só um "a internet caiu") de que a ISP1 tem degradação real e intermitente, não só quedas totais — reforça a prioridade do projeto de redundância de WAN (ADR-016) como algo que vai além de só cobrir uma queda total.
 
 ---
 
